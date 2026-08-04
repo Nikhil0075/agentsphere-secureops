@@ -1,379 +1,390 @@
 {
   "alerts_per_incident": {
-    "max": 5,
-    "median": 2.0,
+    "max": 5371,
+    "median": 1.0,
     "min": 1
   },
   "category_counts": {
-    "CommandAndControl": 190,
-    "CredentialAccess": 164,
-    "Discovery": 197,
-    "Execution": 187,
-    "Exfiltration": 130,
-    "Impact": 83,
-    "InitialAccess": 222,
-    "LateralMovement": 167,
-    "Persistence": 126,
-    "SuspiciousActivity": 234
+    "CommandAndControl": 11202,
+    "CredentialAccess": 27381,
+    "Discovery": 2596,
+    "Execution": 6537,
+    "Exfiltration": 51006,
+    "Impact": 3817,
+    "InitialAccess": 449337,
+    "Malware": 10519,
+    "Ransomware": 1871,
+    "SuspiciousActivity": 22833
   },
   "counts": {
-    "alerts": 429,
-    "evidence_rows": 1700,
-    "incidents": 200,
-    "orgs": 5
+    "alerts": 591340,
+    "evidence_rows": 591340,
+    "incidents": 5000,
+    "orgs": 923
   },
   "entity_hubs": {
     "account": {
-      "distinct_values": 57,
-      "max_incidents_touched": 19,
+      "distinct_values": 33177,
+      "max_incidents_touched": 3619,
       "top": [
         {
-          "incidents": 19,
-          "value": "svc-backup@contoso.com"
+          "incidents": 3619,
+          "value": "673934"
         },
         {
-          "incidents": 8,
-          "value": "user045@contoso.com"
+          "incidents": 60,
+          "value": "286"
         },
         {
-          "incidents": 7,
-          "value": "user010@contoso.com"
+          "incidents": 59,
+          "value": "283"
         },
         {
-          "incidents": 7,
-          "value": "user047@contoso.com"
+          "incidents": 58,
+          "value": "310"
         },
         {
-          "incidents": 6,
-          "value": "user007@contoso.com"
+          "incidents": 56,
+          "value": "210"
         },
         {
-          "incidents": 6,
-          "value": "user015@contoso.com"
+          "incidents": 55,
+          "value": "509"
         },
         {
-          "incidents": 5,
-          "value": "user022@contoso.com"
+          "incidents": 53,
+          "value": "376"
         },
         {
-          "incidents": 5,
-          "value": "user013@contoso.com"
+          "incidents": 53,
+          "value": "320"
         },
         {
-          "incidents": 5,
-          "value": "user017@contoso.com"
+          "incidents": 53,
+          "value": "454"
         },
         {
-          "incidents": 5,
-          "value": "user034@contoso.com"
+          "incidents": 52,
+          "value": "469"
         }
       ]
     },
     "device": {
-      "distinct_values": 71,
-      "max_incidents_touched": 7,
+      "distinct_values": 4434,
+      "max_incidents_touched": 4877,
       "top": [
         {
+          "incidents": 4877,
+          "value": "98799"
+        },
+        {
+          "incidents": 15,
+          "value": "0"
+        },
+        {
+          "incidents": 11,
+          "value": "5"
+        },
+        {
+          "incidents": 11,
+          "value": "1"
+        },
+        {
+          "incidents": 9,
+          "value": "9"
+        },
+        {
           "incidents": 7,
-          "value": "dev-052"
+          "value": "6"
         },
         {
           "incidents": 6,
-          "value": "dev-033"
+          "value": "16"
         },
         {
           "incidents": 6,
-          "value": "dev-059"
+          "value": "194"
         },
         {
-          "incidents": 5,
-          "value": "dev-015"
+          "incidents": 6,
+          "value": "4"
         },
         {
-          "incidents": 5,
-          "value": "dev-001"
-        },
-        {
-          "incidents": 5,
-          "value": "dev-004"
-        },
-        {
-          "incidents": 5,
-          "value": "dev-060"
-        },
-        {
-          "incidents": 5,
-          "value": "dev-027"
-        },
-        {
-          "incidents": 5,
-          "value": "dev-055"
-        },
-        {
-          "incidents": 5,
-          "value": "dev-038"
+          "incidents": 6,
+          "value": "7"
         }
       ]
     },
     "filehash": {
-      "distinct_values": 928,
-      "max_incidents_touched": 1,
+      "distinct_values": 8570,
+      "max_incidents_touched": 4818,
       "top": [
         {
-          "incidents": 1,
-          "value": "005f82c1b2415fffb3ff33141e4ca6e2887760b8dbc516d76b0d0487be100b7b"
+          "incidents": 4818,
+          "value": "138268"
         },
         {
-          "incidents": 1,
-          "value": "00b06a7a626b468b7a1195ce8969aaf581770d467086d4d0bd1e9a38954fa71c"
+          "incidents": 139,
+          "value": "0"
         },
         {
-          "incidents": 1,
-          "value": "01c6d8cec39755b12bdb208b602e01ff9703dc48462b16831a366cc3aeff774f"
+          "incidents": 81,
+          "value": "1"
         },
         {
-          "incidents": 1,
-          "value": "022cc2036237127577774292356ce7126ed996263f9fd95bcfd0da1bdabbd9e4"
+          "incidents": 72,
+          "value": "2"
         },
         {
-          "incidents": 1,
-          "value": "0283b7e591bb0507ea4f4968e0ed63bdafbe80b69aa87a938fcc5e9bb493a7e7"
+          "incidents": 66,
+          "value": "3"
         },
         {
-          "incidents": 1,
-          "value": "03192c4d43e5118460b54cbab714dae431d2d6660b1f3d8fbf5d325efcf424b9"
+          "incidents": 48,
+          "value": "7"
         },
         {
-          "incidents": 1,
-          "value": "03b77a20d7aad95d9a861f697b17c0c4ab2143a0e03334bdfba11b3c84e5a284"
+          "incidents": 44,
+          "value": "10"
         },
         {
-          "incidents": 1,
-          "value": "03f6501feb97011b7da9cdad5a08b8670e11cd874a82576bcc795ac692031a78"
+          "incidents": 36,
+          "value": "9"
         },
         {
-          "incidents": 1,
-          "value": "046dc3afde97a295464cf8ef1ef87506dd1c9a2debc18794776b8a20a09ccc0b"
+          "incidents": 32,
+          "value": "5"
         },
         {
-          "incidents": 1,
-          "value": "04cabc2ecafd93cbc91b7a68b46818482c12f0ade2d63a3810a73e0fd1efd536"
+          "incidents": 30,
+          "value": "24"
         }
       ]
     },
     "ip": {
-      "distinct_values": 127,
-      "max_incidents_touched": 37,
+      "distinct_values": 23215,
+      "max_incidents_touched": 4306,
       "top": [
         {
-          "incidents": 37,
-          "value": "203.0.113.10"
+          "incidents": 4306,
+          "value": "360606"
         },
         {
-          "incidents": 4,
-          "value": "198.51.100.103"
+          "incidents": 196,
+          "value": "5"
         },
         {
-          "incidents": 3,
-          "value": "198.51.100.123"
+          "incidents": 185,
+          "value": "12"
         },
         {
-          "incidents": 3,
-          "value": "198.51.100.180"
+          "incidents": 176,
+          "value": "4"
         },
         {
-          "incidents": 3,
-          "value": "198.51.100.163"
+          "incidents": 162,
+          "value": "30"
         },
         {
-          "incidents": 3,
-          "value": "198.51.100.146"
+          "incidents": 162,
+          "value": "44"
         },
         {
-          "incidents": 2,
-          "value": "198.51.100.124"
+          "incidents": 161,
+          "value": "47"
         },
         {
-          "incidents": 2,
-          "value": "198.51.100.138"
+          "incidents": 161,
+          "value": "36"
         },
         {
-          "incidents": 2,
-          "value": "198.51.100.131"
+          "incidents": 156,
+          "value": "27"
         },
         {
-          "incidents": 2,
-          "value": "198.51.100.153"
+          "incidents": 155,
+          "value": "31"
         }
       ]
     },
     "mailbox": {
-      "distinct_values": 305,
-      "max_incidents_touched": 1,
+      "distinct_values": 15025,
+      "max_incidents_touched": 4492,
       "top": [
         {
-          "incidents": 1,
-          "value": "msg-103076"
+          "incidents": 4492,
+          "value": "529644"
         },
         {
-          "incidents": 1,
-          "value": "msg-105500"
+          "incidents": 5,
+          "value": "3"
         },
         {
-          "incidents": 1,
-          "value": "msg-106416"
+          "incidents": 5,
+          "value": "16822"
         },
         {
-          "incidents": 1,
-          "value": "msg-110230"
+          "incidents": 5,
+          "value": "7"
         },
         {
-          "incidents": 1,
-          "value": "msg-111543"
+          "incidents": 4,
+          "value": "2601"
         },
         {
-          "incidents": 1,
-          "value": "msg-114053"
+          "incidents": 4,
+          "value": "107"
         },
         {
-          "incidents": 1,
-          "value": "msg-114130"
+          "incidents": 4,
+          "value": "21903"
         },
         {
-          "incidents": 1,
-          "value": "msg-115687"
+          "incidents": 4,
+          "value": "18622"
         },
         {
-          "incidents": 1,
-          "value": "msg-116840"
+          "incidents": 4,
+          "value": "16797"
         },
         {
-          "incidents": 1,
-          "value": "msg-119988"
+          "incidents": 4,
+          "value": "144"
         }
       ]
     },
     "process": {
-      "distinct_values": 8,
-      "max_incidents_touched": 166,
+      "distinct_values": 9497,
+      "max_incidents_touched": 4696,
       "top": [
         {
-          "incidents": 166,
-          "value": "powershell.exe"
+          "incidents": 4696,
+          "value": "289573"
         },
         {
-          "incidents": 104,
-          "value": "wscript.exe"
+          "incidents": 189,
+          "value": "0"
         },
         {
-          "incidents": 100,
-          "value": "cmd.exe"
+          "incidents": 157,
+          "value": "1"
         },
         {
-          "incidents": 96,
-          "value": "chrome.exe"
+          "incidents": 57,
+          "value": "2"
         },
         {
-          "incidents": 94,
-          "value": "outlook.exe"
+          "incidents": 56,
+          "value": "4"
         },
         {
-          "incidents": 89,
-          "value": "rundll32.exe"
+          "incidents": 51,
+          "value": "5"
         },
         {
-          "incidents": 88,
-          "value": "mimikatz.exe"
+          "incidents": 39,
+          "value": "13"
         },
         {
-          "incidents": 82,
-          "value": "svchost.exe"
+          "incidents": 37,
+          "value": "17"
+        },
+        {
+          "incidents": 29,
+          "value": "18"
+        },
+        {
+          "incidents": 25,
+          "value": "7"
         }
       ]
     },
     "url": {
-      "distinct_values": 40,
-      "max_incidents_touched": 19,
+      "distinct_values": 2440,
+      "max_incidents_touched": 4720,
       "top": [
         {
+          "incidents": 4720,
+          "value": "160396"
+        },
+        {
+          "incidents": 30,
+          "value": "0"
+        },
+        {
+          "incidents": 29,
+          "value": "2"
+        },
+        {
+          "incidents": 22,
+          "value": "1"
+        },
+        {
+          "incidents": 21,
+          "value": "4"
+        },
+        {
+          "incidents": 20,
+          "value": "15"
+        },
+        {
           "incidents": 19,
-          "value": "http://cdn39.example-delivery.net/p"
+          "value": "23"
         },
         {
           "incidents": 18,
-          "value": "http://cdn15.example-delivery.net/p"
+          "value": "212"
         },
         {
-          "incidents": 16,
-          "value": "http://cdn20.example-delivery.net/p"
+          "incidents": 18,
+          "value": "29"
         },
         {
-          "incidents": 15,
-          "value": "http://cdn38.example-delivery.net/p"
-        },
-        {
-          "incidents": 15,
-          "value": "http://cdn17.example-delivery.net/p"
-        },
-        {
-          "incidents": 14,
-          "value": "http://cdn12.example-delivery.net/p"
-        },
-        {
-          "incidents": 14,
-          "value": "http://cdn5.example-delivery.net/p"
-        },
-        {
-          "incidents": 14,
-          "value": "http://cdn3.example-delivery.net/p"
-        },
-        {
-          "incidents": 14,
-          "value": "http://cdn32.example-delivery.net/p"
-        },
-        {
-          "incidents": 14,
-          "value": "http://cdn7.example-delivery.net/p"
+          "incidents": 17,
+          "value": "10"
         }
       ]
     }
   },
   "entity_type_counts": {
-    "File": 254,
-    "Ip": 224,
-    "Machine": 236,
-    "MailMessage": 225,
-    "Process": 256,
-    "Url": 256,
-    "User": 249
+    "CloudApplication": 4229,
+    "CloudLogonRequest": 136428,
+    "CloudLogonSession": 26919,
+    "File": 19200,
+    "Ip": 178190,
+    "Machine": 19065,
+    "MailMessage": 19302,
+    "Process": 9793,
+    "Url": 7639,
+    "User": 163548
   },
   "evidence_per_incident": {
-    "max": 35,
-    "mean": 8.5,
-    "median": 6.0,
+    "max": 5371,
+    "mean": 118.27,
+    "median": 1.0,
     "min": 1,
-    "p95": 25.0
+    "p95": 632.0500000000002
   },
   "label_distribution": {
-    "BenignPositive": 69,
-    "FalsePositive": 76,
-    "TruePositive": 55
+    "BenignPositive": 2620,
+    "FalsePositive": 1172,
+    "TruePositive": 1208
   },
   "label_distribution_by_split": {
     "demo": {
-      "BenignPositive": 3,
-      "FalsePositive": 9,
-      "TruePositive": 4
+      "BenignPositive": 246,
+      "FalsePositive": 104,
+      "TruePositive": 117
     },
     "train": {
-      "BenignPositive": 52,
-      "FalsePositive": 58,
-      "TruePositive": 39
+      "BenignPositive": 1841,
+      "FalsePositive": 835,
+      "TruePositive": 853
     },
     "val": {
-      "BenignPositive": 14,
-      "FalsePositive": 9,
-      "TruePositive": 12
+      "BenignPositive": 533,
+      "FalsePositive": 233,
+      "TruePositive": 238
     }
   },
   "leakage_check": {
@@ -385,41 +396,41 @@
     "account_object_id": 0.0,
     "account_sid": 0.0,
     "account_upn": 0.0,
-    "action_granular": 1.0,
-    "action_grouped": 1.0,
+    "action_granular": 0.9999,
+    "action_grouped": 0.9999,
     "alert_id": 0.0,
     "alert_ref": 0.0,
     "alert_title": 0.0,
-    "application_name": 0.2524,
+    "application_name": 0.0,
     "category": 0.0,
-    "city": 1.0,
+    "city": 0.0,
     "country_code": 0.0,
     "detector_id": 0.0,
     "device_id": 0.0,
     "device_name": 0.0,
-    "email_cluster_id": 1.0,
+    "email_cluster_id": 0.9983,
     "entity_type": 0.0,
     "evidence_id": 0.0,
     "evidence_role": 0.0,
     "evidence_row_id": 0.0,
     "file_name": 0.0,
-    "file_sha256": 0.4541,
+    "file_sha256": 0.0,
     "folder_path": 0.0,
     "incident_id": 0.0,
     "incident_ref": 0.0,
     "ip_address": 0.0,
     "label": 0.0,
-    "last_verdict": 0.0859,
-    "mailbox_message_id": 0.8206,
-    "mitre_techniques": 0.0441,
+    "last_verdict": 0.9213,
+    "mailbox_message_id": 0.0,
+    "mitre_techniques": 0.4645,
     "org_id": 0.0,
     "os_family": 0.0,
-    "registry_key": 1.0,
+    "registry_key": 0.0,
     "split": 0.0,
-    "state": 1.0,
-    "suspicion_level": 0.0853,
-    "threat_family": 0.5541,
+    "state": 0.0,
+    "suspicion_level": 0.9287,
+    "threat_family": 0.9902,
     "timestamp": 0.0,
-    "url": 0.7182
+    "url": 0.0
   }
 }

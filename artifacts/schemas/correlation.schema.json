@@ -1,0 +1,99 @@
+{
+  "$defs": {
+    "Relationship": {
+      "additionalProperties": false,
+      "properties": {
+        "relation": {
+          "maxLength": 120,
+          "title": "Relation",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relation",
+        "source",
+        "target"
+      ],
+      "title": "Relationship",
+      "type": "object"
+    },
+    "TimelineEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 400,
+          "title": "Description",
+          "type": "string"
+        },
+        "evidence_id": {
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "timestamp": {
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "evidence_id",
+        "timestamp"
+      ],
+      "title": "TimelineEvent",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Input: evidence and related alerts.",
+  "properties": {
+    "evidence_bundle": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Evidence Bundle",
+      "type": "array"
+    },
+    "missing_information": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 15,
+      "title": "Missing Information",
+      "type": "array"
+    },
+    "relationships": {
+      "items": {
+        "$ref": "#/$defs/Relationship"
+      },
+      "maxItems": 40,
+      "title": "Relationships",
+      "type": "array"
+    },
+    "timeline": {
+      "items": {
+        "$ref": "#/$defs/TimelineEvent"
+      },
+      "maxItems": 40,
+      "title": "Timeline",
+      "type": "array"
+    }
+  },
+  "required": [
+    "evidence_bundle",
+    "missing_information",
+    "relationships",
+    "timeline"
+  ],
+  "title": "CorrelationOutput",
+  "type": "object"
+}

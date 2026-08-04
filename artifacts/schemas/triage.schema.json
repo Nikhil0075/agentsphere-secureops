@@ -1,0 +1,48 @@
+{
+  "$defs": {
+    "TriageLabel": {
+      "enum": [
+        "TruePositive",
+        "BenignPositive",
+        "FalsePositive"
+      ],
+      "title": "TriageLabel",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Input: investigation output plus baseline score.",
+  "properties": {
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "label": {
+      "$ref": "#/$defs/TriageLabel"
+    },
+    "rationale": {
+      "maxLength": 1500,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "supporting_evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Supporting Evidence Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "confidence",
+    "label",
+    "rationale",
+    "supporting_evidence_ids"
+  ],
+  "title": "TriageOutput",
+  "type": "object"
+}

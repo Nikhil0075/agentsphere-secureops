@@ -1,0 +1,68 @@
+{
+  "$defs": {
+    "SuspiciousEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "entity_type": {
+          "enum": [
+            "account",
+            "device",
+            "ip",
+            "filehash",
+            "url",
+            "process",
+            "mailbox"
+          ],
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 400,
+          "title": "Reason",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entity_type",
+        "reason",
+        "value"
+      ],
+      "title": "SuspiciousEntity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Input: raw incident fields and detector metadata.",
+  "properties": {
+    "initial_reason": {
+      "maxLength": 1200,
+      "title": "Initial Reason",
+      "type": "string"
+    },
+    "severity_score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Severity Score",
+      "type": "number"
+    },
+    "suspicious_entities": {
+      "items": {
+        "$ref": "#/$defs/SuspiciousEntity"
+      },
+      "maxItems": 25,
+      "title": "Suspicious Entities",
+      "type": "array"
+    }
+  },
+  "required": [
+    "initial_reason",
+    "severity_score",
+    "suspicious_entities"
+  ],
+  "title": "DetectionOutput",
+  "type": "object"
+}

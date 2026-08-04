@@ -1,0 +1,31 @@
+{
+  "additionalProperties": false,
+  "description": "Not an LLM output \u2014 the analyst's recorded decision on a high-risk recommendation.",
+  "properties": {
+    "analyst": {
+      "title": "Analyst",
+      "type": "string"
+    },
+    "approved": {
+      "title": "Approved",
+      "type": "boolean"
+    },
+    "comment": {
+      "maxLength": 1000,
+      "title": "Comment",
+      "type": "string"
+    },
+    "signature": {
+      "title": "Signature",
+      "type": "string"
+    }
+  },
+  "required": [
+    "analyst",
+    "approved",
+    "comment",
+    "signature"
+  ],
+  "title": "HumanApproval",
+  "type": "object"
+}

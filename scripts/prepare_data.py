@@ -27,11 +27,18 @@ import pandas as pd  # noqa: E402
 
 from app.config import DATA_PROCESSED, ensure_dirs, settings  # noqa: E402
 from app.data import incidents as incidents_mod  # noqa: E402
-from app.data import loader  # noqa: E402
-from app.data.schema import REQUIRED_COLUMNS  # noqa: E402
+from app.data import loader, sentinels  # noqa: E402
+from app.data.schema import LABELS, REQUIRED_COLUMNS  # noqa: E402
 from app.data.summarize import build_incident_summary  # noqa: E402
 
 MANIFEST = DATA_PROCESSED / "manifest.json"
+
+#: Showcase incidents must be small enough to render and large enough to have structure.
+#: GUIDE's real distribution is brutal — median 1 evidence row, max 5371 — so a demo set picked
+#: at random would be half empty incidents and half incidents that freeze the UI.
+SHOWCASE_MIN_EVIDENCE = 3
+SHOWCASE_MAX_EVIDENCE = 60
+SHOWCASE_PER_LABEL = 10
 
 
 def content_hash(frame: pd.DataFrame) -> str:
@@ -60,16 +67,48 @@ def drop_unusable(evidence: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, int]]
     return deduped.reset_index(drop=True), stats
 
 
+def mark_showcase(
+    incident_table: pd.DataFrame,
+    per_label: int = SHOWCASE_PER_LABEL,
+    min_evidence: int = SHOWCASE_MIN_EVIDENCE,
+    max_evidence: int = SHOWCASE_MAX_EVIDENCE,
+) -> pd.DataFrame:
+    """Flag a curated, label-balanced demo set (§7.1: 20-50 cases across all three labels).
+
+    Selection is deterministic — sorted by incident id, first ``per_label`` of each class inside
+    the evidence-count band — so the demo set does not change between runs.
+    """
+    out = incident_table.copy()
+    out["is_showcase"] = False
+
+    eligible = out[
+        out["evidence_count"].between(min_evidence, max_evidence)
+    ].sort_values("incident_id")
+
+    chosen: list[str] = []
+    for label in LABELS:
+        chosen.extend(
+            eligible[eligible["label"] == label]["incident_id"].head(per_label).tolist()
+        )
+
+    out.loc[out["incident_id"].isin(chosen), "is_showcase"] = True
+    return out
+
+
 def build(source: str, max_incidents: int) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     raw = loader.load_raw(source=source, max_incidents=max_incidents)
     evidence, drop_stats = drop_unusable(raw)
+
+    # GUIDE fills unused entity columns with a per-column placeholder. Blank it before anything
+    # counts entities, or the entity graph becomes one giant component. See app/data/sentinels.py.
+    evidence, detected_sentinels = sentinels.detect_and_mask(evidence)
 
     # Stable ordering before anything is hashed or split.
     evidence = evidence.sort_values(["incident_id", "alert_id", "evidence_id"]).reset_index(
         drop=True
     )
 
-    incident_table = incidents_mod.aggregate(evidence)
+    incident_table = mark_showcase(incidents_mod.aggregate(evidence))
 
     summaries = []
     for _, row in incident_table.iterrows():
@@ -91,6 +130,14 @@ def build(source: str, max_incidents: int) -> tuple[pd.DataFrame, pd.DataFrame, 
         },
         "split_sizes": {
             str(k): int(v) for k, v in incident_table["split"].value_counts().items()
+        },
+        "masked_sentinels": detected_sentinels,
+        "showcase_incidents": int(incident_table["is_showcase"].sum()),
+        "showcase_by_label": {
+            str(k): int(v)
+            for k, v in incident_table[incident_table["is_showcase"]]["label"]
+            .value_counts()
+            .items()
         },
     }
     return evidence, incident_table, stats

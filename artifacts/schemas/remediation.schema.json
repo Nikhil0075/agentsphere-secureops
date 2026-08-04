@@ -1,0 +1,43 @@
+{
+  "$defs": {
+    "RiskLevel": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "RiskLevel",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Input: triage result plus policy catalogue. Every action is simulated.",
+  "properties": {
+    "action_risk": {
+      "$ref": "#/$defs/RiskLevel"
+    },
+    "justification": {
+      "maxLength": 1500,
+      "title": "Justification",
+      "type": "string"
+    },
+    "recommended_action": {
+      "maxLength": 120,
+      "title": "Recommended Action",
+      "type": "string"
+    },
+    "rollback_plan": {
+      "maxLength": 1000,
+      "title": "Rollback Plan",
+      "type": "string"
+    }
+  },
+  "required": [
+    "action_risk",
+    "justification",
+    "recommended_action",
+    "rollback_plan"
+  ],
+  "title": "RemediationOutput",
+  "type": "object"
+}

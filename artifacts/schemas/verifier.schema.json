@@ -1,0 +1,79 @@
+{
+  "$defs": {
+    "PolicyCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "maxLength": 400,
+          "title": "Detail",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "policy_id": {
+          "title": "Policy Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "detail",
+        "passed",
+        "policy_id"
+      ],
+      "title": "PolicyCheck",
+      "type": "object"
+    },
+    "VerifierVerdict": {
+      "enum": [
+        "accept",
+        "reject",
+        "escalate"
+      ],
+      "title": "VerifierVerdict",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Input: all prior outputs. This agent may reject its own team.",
+  "properties": {
+    "contradictions": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 15,
+      "title": "Contradictions",
+      "type": "array"
+    },
+    "escalation_required": {
+      "title": "Escalation Required",
+      "type": "boolean"
+    },
+    "policy_checks": {
+      "items": {
+        "$ref": "#/$defs/PolicyCheck"
+      },
+      "maxItems": 20,
+      "title": "Policy Checks",
+      "type": "array"
+    },
+    "reasoning": {
+      "maxLength": 1500,
+      "title": "Reasoning",
+      "type": "string"
+    },
+    "verdict": {
+      "$ref": "#/$defs/VerifierVerdict"
+    }
+  },
+  "required": [
+    "contradictions",
+    "escalation_required",
+    "policy_checks",
+    "reasoning",
+    "verdict"
+  ],
+  "title": "VerifierOutput",
+  "type": "object"
+}

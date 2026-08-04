@@ -1,0 +1,110 @@
+# Simulated remediation catalogue and the rules that decide who may authorise each action.
+#
+# EVERY ACTION HERE IS SIMULATED. Nothing in this repository isolates a device, disables an
+# account or touches a real system. The catalogue exists to make the autonomy boundary explicit
+# and testable, not to drive a SOAR platform.
+#
+# The gate is deterministic. It is not a prompt, it is not advisory, and an agent cannot argue its
+# way past it — the Verifier and the policy engine read the same catalogue, and the engine has the
+# final word (§4.2: "Low-risk simulated actions may pass automatically; high-risk actions block on
+# human approval").
+
+actions:
+  - id: close_as_false_positive
+    name: Close incident as false positive
+    risk: low
+    reversible: true
+    description: Mark the incident benign and close it with the rationale attached.
+    rollback: Reopen the incident; no system state was changed.
+    applicable_labels: [FalsePositive, BenignPositive]
+
+  - id: monitor_and_watchlist
+    name: Add entities to an enhanced monitoring watchlist
+    risk: low
+    reversible: true
+    description: Raise logging fidelity on the implicated entities for 7 days.
+    rollback: Remove the watchlist entry.
+    applicable_labels: [BenignPositive, TruePositive, FalsePositive]
+
+  - id: request_user_verification
+    name: Request user verification of the activity
+    risk: low
+    reversible: true
+    description: Ask the account owner to confirm whether the activity was theirs.
+    rollback: Withdraw the request.
+    applicable_labels: [BenignPositive, TruePositive]
+
+  - id: force_password_reset
+    name: Force credential reset on the affected account
+    risk: medium
+    reversible: true
+    description: Expire the account's credentials and require a reset at next sign-in.
+    rollback: None needed; the user sets a new credential.
+    applicable_labels: [TruePositive]
+
+  - id: revoke_sessions
+    name: Revoke active sessions and refresh tokens
+    risk: medium
+    reversible: true
+    description: Invalidate live sessions for the affected account.
+    rollback: The user signs in again.
+    applicable_labels: [TruePositive]
+
+  - id: quarantine_file
+    name: Quarantine the implicated file
+    risk: high
+    reversible: true
+    description: Move the file to quarantine across affected devices.
+    rollback: Restore from quarantine.
+    applicable_labels: [TruePositive]
+
+  - id: isolate_device
+    name: Isolate device from the network
+    risk: high
+    reversible: true
+    description: Cut network access for the device, leaving the management channel open.
+    rollback: Release the isolation.
+    applicable_labels: [TruePositive]
+
+  - id: disable_account
+    name: Disable the affected account
+    risk: high
+    reversible: true
+    description: Disable sign-in for the account pending investigation.
+    rollback: Re-enable the account.
+    applicable_labels: [TruePositive]
+
+  - id: block_ip_egress
+    name: Block egress to the implicated address
+    risk: high
+    reversible: true
+    description: Add a perimeter block for the destination address.
+    rollback: Remove the block rule.
+    applicable_labels: [TruePositive]
+
+# Deterministic gate. Rules are evaluated top to bottom; the first match decides.
+gate:
+  # An action may only run without a human when *every* one of these holds.
+  auto_approve:
+    max_risk: low
+    min_confidence: 0.80
+    require_verifier_accept: true
+    require_no_contradictions: true
+
+  # Any of these forces a human into the loop regardless of confidence.
+  force_human_approval:
+    risk_levels: [medium, high]
+    verifier_verdicts: [reject, escalate]
+    below_confidence: 0.80
+
+policies:
+  - id: POL-001
+    description: High-risk actions require a named human approver before finalisation.
+  - id: POL-002
+    description: A triage decision must cite at least one evidence id present in the bundle.
+  - id: POL-003
+    description: The recommended action must be applicable to the assigned triage label.
+  - id: POL-004
+    description: A confidence below 0.80 cannot be auto-approved at any risk level.
+  - id: POL-005
+    description: A Verifier verdict of reject or escalate blocks automatic finalisation.

@@ -1,0 +1,94 @@
+{
+  "$defs": {
+    "MitreMapping": {
+      "additionalProperties": false,
+      "properties": {
+        "supporting_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "title": "Supporting Evidence Ids",
+          "type": "array"
+        },
+        "technique_id": {
+          "maxLength": 16,
+          "title": "Technique Id",
+          "type": "string"
+        },
+        "technique_name": {
+          "maxLength": 160,
+          "title": "Technique Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "supporting_evidence_ids",
+        "technique_id",
+        "technique_name"
+      ],
+      "title": "MitreMapping",
+      "type": "object"
+    },
+    "SimilarCase": {
+      "additionalProperties": false,
+      "properties": {
+        "incident_id": {
+          "title": "Incident Id",
+          "type": "string"
+        },
+        "similarity": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Similarity",
+          "type": "number"
+        },
+        "why_similar": {
+          "maxLength": 400,
+          "title": "Why Similar",
+          "type": "string"
+        }
+      },
+      "required": [
+        "incident_id",
+        "similarity",
+        "why_similar"
+      ],
+      "title": "SimilarCase",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Input: evidence bundle plus retrieved incidents.",
+  "properties": {
+    "investigation_summary": {
+      "maxLength": 2000,
+      "title": "Investigation Summary",
+      "type": "string"
+    },
+    "mitre_mapping": {
+      "items": {
+        "$ref": "#/$defs/MitreMapping"
+      },
+      "maxItems": 10,
+      "title": "Mitre Mapping",
+      "type": "array"
+    },
+    "similar_cases": {
+      "items": {
+        "$ref": "#/$defs/SimilarCase"
+      },
+      "maxItems": 10,
+      "title": "Similar Cases",
+      "type": "array"
+    }
+  },
+  "required": [
+    "investigation_summary",
+    "mitre_mapping",
+    "similar_cases"
+  ],
+  "title": "InvestigationOutput",
+  "type": "object"
+}

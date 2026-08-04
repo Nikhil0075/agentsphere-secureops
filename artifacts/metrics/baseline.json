@@ -1,0 +1,87 @@
+{
+  "accuracy": 0.7072,
+  "confusion_matrix": {
+    "labels": [
+      "TruePositive",
+      "BenignPositive",
+      "FalsePositive"
+    ],
+    "matrix": [
+      [
+        145,
+        65,
+        28
+      ],
+      [
+        67,
+        420,
+        46
+      ],
+      [
+        20,
+        68,
+        145
+      ]
+    ],
+    "rows_are_actual": true
+  },
+  "dataset": {
+    "train_incidents": 3529,
+    "train_label_distribution": {
+      "BenignPositive": 1841,
+      "FalsePositive": 835,
+      "TruePositive": 853
+    },
+    "val_incidents": 1004,
+    "val_label_distribution": {
+      "BenignPositive": 533,
+      "FalsePositive": 233,
+      "TruePositive": 238
+    }
+  },
+  "feature_importance": {
+    "alert_count": 0.0729,
+    "distinct_account_count": 0.057,
+    "distinct_category_count": 0.0088,
+    "distinct_detector_count": 0.025,
+    "distinct_device_count": 0.0159,
+    "distinct_entity_count": 0.0876,
+    "distinct_filehash_count": 0.0207,
+    "distinct_ip_count": 0.0358,
+    "distinct_url_count": 0.0256,
+    "duration_minutes": 0.1583,
+    "evidence_count": 0.0083,
+    "hour_of_day": 0.2756,
+    "max_last_verdict": 0.0089,
+    "max_suspicion_level": 0.0128,
+    "mitre_technique_count": 0.0575,
+    "top_category": 0.0264,
+    "top_detector": 0.0621,
+    "top_entity_type": 0.0406
+  },
+  "generated_at": "2026-08-04T12:04:34.178243+00:00",
+  "implementation": "lightgbm-4.7.0",
+  "macro_f1": 0.6774,
+  "per_class": {
+    "BenignPositive": {
+      "f1": 0.7735,
+      "precision": 0.7595,
+      "recall": 0.788,
+      "support": 533
+    },
+    "FalsePositive": {
+      "f1": 0.6416,
+      "precision": 0.6621,
+      "recall": 0.6223,
+      "support": 233
+    },
+    "TruePositive": {
+      "f1": 0.617,
+      "precision": 0.625,
+      "recall": 0.6092,
+      "support": 238
+    }
+  },
+  "true_positive_recall": 0.6092,
+  "weighted_f1": 0.7058
+}
