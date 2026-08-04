@@ -67,7 +67,8 @@ def test_every_day_three_agent_produces_output(one_incident):
 def test_agents_run_in_contract_order(one_incident):
     row, rows = one_incident
     state = Workflow(client=DeterministicClient()).run(row, rows).state
-    assert [r.sequence for r in state.runs] == [1, 2, 3, 4]
+    assert [r.sequence for r in state.runs] == list(range(1, len(AGENT_SEQUENCE) + 1))
+    assert [r.agent for r in state.runs] == list(AGENT_SEQUENCE)
 
 
 def test_triage_cites_evidence_from_the_bundle(one_incident):
@@ -292,21 +293,71 @@ def test_context_withholds_ground_truth(one_incident):
     assert "label_int" not in context.incident_fields
 
 
-def test_agent_prompts_never_contain_the_ground_truth_label(one_incident):
-    """The single most damaging leak, checked on the actual rendered prompts."""
+#: Agents that decide *before* any label exists. None of these may see a label at all.
+PRE_DECISION_AGENTS = ("detection", "correlation", "investigation", "triage")
+
+
+def test_pre_decision_prompts_never_contain_any_label(one_incident):
+    """The single most damaging leak, checked on the actual rendered prompts.
+
+    Detection through Triage run before a label exists, so *no* label string may appear in their
+    prompts — not the ground truth, not any other. Remediation and Verifier are excluded here
+    because they legitimately consume Triage's prediction; they are covered by the test below.
+    """
     from app.agents.schemas import WorkflowState
     from app.orchestration.context import IncidentContext
 
     row, rows = one_incident
-    truth = row["label"]
     context = IncidentContext.from_incident(row, rows)
     state = WorkflowState(workflow_id="WF-test", incident_id=context.incident_id)
 
     workflow = Workflow(client=DeterministicClient())
-    for name in AGENT_SEQUENCE:
+    for name in PRE_DECISION_AGENTS:
         agent = workflow.agents[name]
         prompt = agent.build_prompt(agent.build_context(state, context=context))
-        assert truth not in prompt, f"{name} prompt leaks the ground-truth label"
+        for label in ("TruePositive", "BenignPositive", "FalsePositive"):
+            assert label not in prompt, f"{name} prompt leaks the {label} label"
+        output, _ = agent.run(state, context=context)
+        setattr(state, name, output)
+
+
+def test_post_decision_prompts_carry_the_prediction_not_the_ground_truth(one_incident):
+    """Remediation and Verifier see Triage's *prediction*, and nothing from the incident record.
+
+    Checked by forcing the two apart: the fixture's ground-truth label is overwritten with one
+    value and Triage is made to predict a different one. If the prompts follow the prediction and
+    never mention the ground truth, they cannot be reading the incident's label field.
+    """
+    from app.agents.schemas import TriageOutput, WorkflowState
+    from app.orchestration.context import IncidentContext
+
+    row, rows = one_incident
+    row = row.copy()
+    row["label"] = "TruePositive"          # ground truth
+    predicted = "FalsePositive"            # deliberately different
+
+    context = IncidentContext.from_incident(row, rows)
+    state = WorkflowState(workflow_id="WF-test", incident_id=context.incident_id)
+
+    workflow = Workflow(client=DeterministicClient())
+    for name in PRE_DECISION_AGENTS:
+        output, _ = workflow.agents[name].run(state, context=context)
+        setattr(state, name, output)
+
+    state.triage = TriageOutput(
+        label=TriageLabel(predicted),
+        confidence=0.9,
+        rationale="forced prediction for the leakage test",
+        supporting_evidence_ids=state.correlation.evidence_bundle[:2],
+    )
+
+    for name in ("remediation", "verifier"):
+        agent = workflow.agents[name]
+        prompt = agent.build_prompt(agent.build_context(state, context=context))
+        assert predicted in prompt, f"{name} should reason about the prediction"
+        # The catalogue legitimately names every label, so check the *incident's* framing only.
+        assert "Triage: TruePositive" not in prompt
+        assert f"Triage: {predicted}" in prompt or predicted in prompt
         output, _ = agent.run(state, context=context)
         setattr(state, name, output)
 

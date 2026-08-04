@@ -25,16 +25,26 @@ from app.agents.correlation import CorrelationAgent
 from app.agents.detection import DetectionAgent
 from app.agents.investigation import InvestigationAgent
 from app.agents.llm import LLMClient, build_client
+from app.agents.remediation import RemediationAgent
 from app.agents.schemas import BaselinePrediction, WorkflowState
 from app.agents.triage import TriageAgent
+from app.agents.verifier import VerifierAgent
 from app.blockchain.hashing import hash_agent_output, hash_evidence_bundle
 from app.graph.correlate import correlate
 from app.observability.logging import log_event
 from app.orchestration.context import IncidentContext
+from app.policies import engine
 from app.retrieval.base import NullRetriever, Retriever
 
-#: The Day 3 chain. Remediation and Verifier land on Day 4.
-AGENT_SEQUENCE = ("detection", "correlation", "investigation", "triage")
+#: The full chain (§6.1). Detection through Verifier, in contract order.
+AGENT_SEQUENCE = (
+    "detection",
+    "correlation",
+    "investigation",
+    "triage",
+    "remediation",
+    "verifier",
+)
 
 Node = Callable[[WorkflowState, IncidentContext], WorkflowState]
 
@@ -43,6 +53,7 @@ Node = Callable[[WorkflowState, IncidentContext], WorkflowState]
 class WorkflowResult:
     state: WorkflowState
     context: IncidentContext
+    gate: "engine.GateDecision | None" = None
 
     @property
     def label(self) -> str:
@@ -77,6 +88,8 @@ class Workflow:
             "correlation": CorrelationAgent(self.client, sequence=2),
             "investigation": InvestigationAgent(self.client, sequence=3),
             "triage": TriageAgent(self.client, sequence=4),
+            "remediation": RemediationAgent(self.client, sequence=5),
+            "verifier": VerifierAgent(self.client, sequence=6),
         }
 
     # --- context assembly ---------------------------------------------------------------
@@ -122,6 +135,41 @@ class Workflow:
             state.errors.append(f"{name}: {record.status} — {record.validation_error}")
         return state
 
+    def _apply_gate(self, state: WorkflowState) -> engine.GateDecision | None:
+        """Run the deterministic policy gate over the finished chain.
+
+        This is the last word on autonomy and it is not an LLM. The Verifier reasons about whether
+        the recommendation holds up; this decides whether it may proceed without a human, by
+        dictionary lookup and threshold comparison. An agent cannot argue its way past it — which
+        is the honest answer to "is this just an LLM wrapper?" (§12.3).
+        """
+        if state.triage is None or state.remediation is None:
+            # Without both, there is nothing to gate and no basis to auto-approve anything.
+            state.requires_approval = True
+            return None
+
+        bundle = state.correlation.evidence_bundle if state.correlation else state.evidence_ids
+        gate = engine.evaluate(
+            triage=state.triage,
+            remediation=state.remediation,
+            verifier=state.verifier,
+            evidence_ids=bundle,
+        )
+        state.requires_approval = gate.requires_approval
+
+        log_event(
+            "policy_gate",
+            workflow_id=state.workflow_id,
+            incident_id=state.incident_id,
+            action=state.remediation.recommended_action,
+            action_risk=gate.action_risk,
+            requires_approval=gate.requires_approval,
+            auto_approved=gate.auto_approved,
+            failed_policies=gate.failed_policies(),
+            reasons=gate.reasons,
+        )
+        return gate
+
     # --- driver -------------------------------------------------------------------------
 
     def run(
@@ -157,6 +205,8 @@ class Workflow:
         for name in AGENT_SEQUENCE:
             state = self._run_agent(name, state, context)
 
+        gate = self._apply_gate(state)
+
         # Hash what the decision was actually built on. Day 5 anchors these.
         bundle = (
             state.correlation.evidence_bundle if state.correlation else state.evidence_ids
@@ -177,8 +227,10 @@ class Workflow:
             incident_id=state.incident_id,
             label=state.triage.label.value if state.triage else "",
             confidence=state.triage.confidence if state.triage else 0.0,
+            verdict=state.verifier.verdict.value if state.verifier else "",
+            requires_approval=state.requires_approval,
             degraded=[r.agent for r in state.runs if r.status != "ok"],
             latency_ms=sum(r.latency_ms for r in state.runs),
         )
 
-        return WorkflowResult(state=state, context=context)
+        return WorkflowResult(state=state, context=context, gate=gate)

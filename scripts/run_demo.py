@@ -21,16 +21,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.agents.llm import build_client  # noqa: E402
-from app.config import METRICS_DIR, ensure_dirs  # noqa: E402
+from app.config import ARTIFACTS, METRICS_DIR, ensure_dirs  # noqa: E402
 from app.data import incidents as incidents_mod  # noqa: E402
 from app.data import loader  # noqa: E402
 from app.db import session as db  # noqa: E402
 from app.observability.logging import persist_agent_run  # noqa: E402
 from app.orchestration.workflow import Workflow, WorkflowResult  # noqa: E402
+from app.retrieval import hybrid  # noqa: E402
 from app.retrieval.base import EntityOverlapRetriever  # noqa: E402
 from app.services import scoring  # noqa: E402
 
 RUN_METRICS = METRICS_DIR / "workflow_runs.json"
+INDEX_DIR = ARTIFACTS / "index"
 
 
 def print_result(result: WorkflowResult) -> None:
@@ -89,6 +91,31 @@ def print_result(result: WorkflowResult) -> None:
         print(f"             cites {len(state.triage.supporting_evidence_ids)} evidence id(s)")
         print(f"             {state.triage.rationale[:260]}")
 
+    if state.remediation:
+        print(
+            f"\nREMEDIATION  {state.remediation.recommended_action} "
+            f"({state.remediation.action_risk.value} risk, simulated)"
+        )
+        print(f"             rollback: {state.remediation.rollback_plan[:150]}")
+
+    if state.verifier:
+        v = state.verifier
+        passed = sum(1 for c in v.policy_checks if c.passed)
+        print(f"\nVERIFIER     {v.verdict.value.upper()}  ({passed}/{len(v.policy_checks)} checks)")
+        for contradiction in v.contradictions[:3]:
+            print(f"             ! {contradiction[:150]}")
+        print(f"             {v.reasoning[:220]}")
+
+    if result.gate:
+        g = result.gate
+        print(
+            f"\nPOLICY GATE  {'HUMAN APPROVAL REQUIRED' if g.requires_approval else 'auto-approved'}"
+        )
+        for check in g.checks:
+            print(f"             [{'pass' if check.passed else 'FAIL'}] {check.policy_id}  {check.detail[:90]}")
+        for reason in g.reasons[:4]:
+            print(f"             -> {reason[:150]}")
+
     print(f"\nevidence hash {state.evidence_hash}")
     print(f"output hash   {state.output_hash}")
     if result.degraded_agents():
@@ -129,8 +156,13 @@ def main() -> int:
     client = build_client(args.backend)
     print(f"backend: {client.backend} ({getattr(client, 'model', '')})")
 
-    # Retrieval over the corpus. Built once; the Day 4 hybrid index replaces it here.
-    retriever = EntityOverlapRetriever(evidence, incidents)
+    # Prefer the prebuilt hybrid index; fall back to entity overlap when it has not been built.
+    retriever = hybrid.load_if_available(INDEX_DIR)
+    if retriever is None:
+        print("no prebuilt index (run scripts/build_index.py); using entity overlap")
+        retriever = EntityOverlapRetriever(evidence, incidents)
+    else:
+        print(f"retrieval: hybrid BM25+vector, RRF k={retriever.rrf_k}")
     workflow = Workflow(client=client, retriever=retriever)
 
     summaries = []

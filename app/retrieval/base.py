@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import pandas as pd
 
@@ -37,7 +37,11 @@ class RetrievedIncident:
         return "shares " + ", ".join(self.shared_entities[:4])
 
 
+@runtime_checkable
 class Retriever(Protocol):
+    """Runtime-checkable so a swapped implementation can be asserted against the contract, which
+    is the whole reason this boundary was frozen on Day 3."""
+
     def similar(self, incident_id: str, k: int = 5) -> list[RetrievedIncident]: ...
 
 

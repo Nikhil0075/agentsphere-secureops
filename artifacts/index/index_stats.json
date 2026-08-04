@@ -1,0 +1,8 @@
+{
+  "build_seconds": 14.57,
+  "candidate_depth": 50,
+  "dimensions": 384,
+  "embedding_backend": "tfidf-svd",
+  "incidents": 5000,
+  "rrf_k": 60
+}

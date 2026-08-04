@@ -1,20 +1,20 @@
 {
-  "backend": "cache",
+  "backend": "deterministic",
   "runs": [
     {
       "actual": "TruePositive",
       "alerts": 7,
       "baseline": "TruePositive",
       "clusters": 7,
-      "confidence": 0.86,
+      "confidence": 0.7305,
       "correct": true,
       "degraded": [],
       "evidence_hash": "0xd58d05a7601a13b9724aaafe2a9b647143a76d4d80aedafeb63ce2b8d2016f43",
       "incident_id": "INC-002cdb785d37",
       "latency_ms": 0,
-      "output_hash": "0xc59128396f9baa36cebdbfb3a226bcda54e2a883bf6da0669697fe1e3391b617",
+      "output_hash": "0x25fa04a3eddc03c5c6c06f01fe12c5feb83be891e217d313ba6d6d7de3582798",
       "predicted": "TruePositive",
-      "workflow_id": "WF-cff8648014e1"
+      "workflow_id": "WF-cf2e81333635"
     }
   ]
 }
