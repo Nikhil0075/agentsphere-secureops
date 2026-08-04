@@ -47,6 +47,18 @@ class AnchorResult:
     contract_address: str = ""
     gas_used: int | None = None
     reason: str = ""
+    #: Decoded Solidity custom error name, e.g. ``ApprovalRequired``. Empty when the failure was
+    #: not a contract revert.
+    error: str = ""
+
+    @property
+    def blocked_by_policy(self) -> bool:
+        """True when the *contract* refused, rather than something going wrong.
+
+        A high-risk decision failing to finalise is the control working, not an error, and the
+        demo needs to say so in those words.
+        """
+        return self.error in {"ApprovalRequired", "DecisionWasRejected", "UnauthorisedAgent"}
 
     @property
     def explorer_url(self) -> str:
@@ -65,6 +77,8 @@ class AnchorResult:
             "gas_used": self.gas_used,
             "explorer_url": self.explorer_url,
             "reason": self.reason,
+            "error": self.error,
+            "blocked_by_policy": self.blocked_by_policy,
         }
 
 
@@ -88,6 +102,7 @@ class ChainClient:
     _registry: Any = None
     _proof: Any = None
     _accounts: dict[str, Any] = field(default_factory=dict)
+    _error_selectors: dict[str, str] = field(default_factory=dict)
     unavailable_reason: str = ""
 
     @classmethod
@@ -125,6 +140,38 @@ class ChainClient:
             return os.getenv("SEPOLIA_RPC_URL", "https://ethereum-sepolia-rpc.publicnode.com")
         return os.getenv("LOCAL_RPC_URL", "http://127.0.0.1:8545")
 
+    def _build_error_selectors(self) -> dict[str, str]:
+        """Map 4-byte selector -> custom error name, from the deployed ABIs.
+
+        Public RPC providers return the raw revert data rather than a decoded name, so a
+        ``ApprovalRequired`` revert arrives as ``0xb0be42d3…``. Matching on the *name* appearing
+        in an exception string works against a local Hardhat node and silently stops working on a
+        real testnet — which is exactly where the "the contract refused" moment gets demonstrated.
+        """
+        from eth_utils import function_signature_to_4byte_selector
+
+        selectors: dict[str, str] = {}
+        for contract in (self.deployment or {}).get("contracts", {}).values():
+            for entry in contract.get("abi", []):
+                if entry.get("type") != "error":
+                    continue
+                types = ",".join(i["type"] for i in entry.get("inputs", []))
+                signature = f"{entry['name']}({types})"
+                selector = function_signature_to_4byte_selector(signature).hex()
+                selectors["0x" + selector.removeprefix("0x")] = entry["name"]
+        return selectors
+
+    def _decode_error(self, message: str) -> str:
+        """Pull a custom error name out of whatever the provider gave us."""
+        for selector, name in self._error_selectors.items():
+            if selector in message.lower():
+                return name
+        # Some providers do decode it; fall back to a name match.
+        for name in self._error_selectors.values():
+            if name in message:
+                return name
+        return ""
+
     def _bind(self) -> None:
         from eth_account import Account
 
@@ -142,6 +189,8 @@ class ChainClient:
         rogue = self.deployment.get("rogue") or {}
         if rogue.get("privateKey"):
             self._accounts["rogue"] = Account.from_key(rogue["privateKey"])
+
+        self._error_selectors = self._build_error_selectors()
 
     # --- status ------------------------------------------------------------------------
 
@@ -236,7 +285,10 @@ class ChainClient:
                 contract_address=self.contract_address,
             )
         except Exception as exc:  # noqa: BLE001
-            return AnchorResult(anchored=False, reason=f"{type(exc).__name__}: {exc}")
+            message = f"{type(exc).__name__}: {exc}"
+            return AnchorResult(
+                anchored=False, reason=message, error=self._decode_error(message)
+            )
 
     def approve_decision(
         self, decision_id: int, approved: bool, comment_hash: str, approver_role: str = "verifier"
@@ -262,7 +314,10 @@ class ChainClient:
                 contract_address=self.contract_address,
             )
         except Exception as exc:  # noqa: BLE001
-            return AnchorResult(anchored=False, reason=f"{type(exc).__name__}: {exc}")
+            message = f"{type(exc).__name__}: {exc}"
+            return AnchorResult(
+                anchored=False, reason=message, error=self._decode_error(message)
+            )
 
     def finalize_decision(self, decision_id: int, agent_role: str = "triage") -> AnchorResult:
         """Finalise. A high-risk decision without approval reverts — that is the control."""
@@ -286,7 +341,10 @@ class ChainClient:
                 contract_address=self.contract_address,
             )
         except Exception as exc:  # noqa: BLE001
-            return AnchorResult(anchored=False, reason=f"{type(exc).__name__}: {exc}")
+            message = f"{type(exc).__name__}: {exc}"
+            return AnchorResult(
+                anchored=False, reason=message, error=self._decode_error(message)
+            )
 
     # --- reads -------------------------------------------------------------------------
 

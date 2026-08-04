@@ -176,13 +176,13 @@ def print_anchor(conn, persisted, result, approver: str | None) -> None:
     final = client.finalize_decision(anchor.decision_id)
     if final.anchored:
         print(f"  finalised    block {final.block_number}")
+    elif final.blocked_by_policy:
+        # Expected on a medium/high-risk decision with no approval. This is the exit criterion:
+        # the *contract* refused, not the application layer.
+        print(f"  finalise     BLOCKED by {final.error} - human approval required")
+        print("               the contract refused; not the application layer")
     else:
-        # Expected on a high-risk decision with no approval. This is the exit criterion.
-        reason = final.reason
-        blocked = "ApprovalRequired" in reason
-        print(f"  finalise     {'BLOCKED - human approval required' if blocked else reason[:120]}")
-        if blocked:
-            print("               the contract refused; not the application layer")
+        print(f"  finalise     failed: {final.reason[:140]}")
 
 
 def main() -> int:

@@ -21,9 +21,28 @@ Phase 0 build, days 1–5 of 7. See the master plan for the full schedule.
 | 2 (5 Aug) | Baseline classifier, frozen agent contracts, risk queue, policy gate | done |
 | 3 (6 Aug) | Entity graph, Union-Find correlation, orchestrator, first four agents | done |
 | 4 (7 Aug) | BM25 + FAISS + RRF retrieval, BFS/Dijkstra, Remediation and Verifier agents | done |
-| 5 (8 Aug) | Solidity contracts, deployment, on-chain approval | done (local; testnet awaiting faucet funding) |
+| 5 (8 Aug) | Solidity contracts, **deployed to Sepolia**, on-chain approval | done |
 | — | FastAPI backend + React frontend, replacing Streamlit | done |
 | 6–7 (9–10 Aug) | Tamper demo, metrics polish, freeze | not started |
+
+## Deployed contracts (Sepolia, chainId 11155111)
+
+| Contract | Address |
+|---|---|
+| `AgentRegistry` | [`0x62CE1b8765b678947A39aA90c15D33C3328476cc`](https://sepolia.etherscan.io/address/0x62CE1b8765b678947A39aA90c15D33C3328476cc) |
+| `DecisionProof` | [`0xB849e1c8ba0147Eb8cC0b7E44caA6F013B150578`](https://sepolia.etherscan.io/address/0xB849e1c8ba0147Eb8cC0b7E44caA6F013B150578) |
+
+Six agent identities are registered on-chain, each with its role and an active flag. The three
+claims a database cannot make, all verified against this deployment:
+
+| Claim | Evidence |
+|---|---|
+| A high-risk action cannot finalise without a human | [decision #2](https://sepolia.etherscan.io/tx/0xae72f69c054647236b6a4faf6d792f9f354bf6f8ae501430ba9e6a224f847a16) submitted, then `finalizeDecision` **reverted with `ApprovalRequired`** |
+| Approval unblocks it, and the approver is a signature | [decision #3](https://sepolia.etherscan.io/tx/0x796ecbd17358f4eb39dfc54cab1df755e39eb72d4479cc63382a8804b9b33b3d) submitted → approved → finalised, approver recorded as `msg.sender` |
+| An unauthorised agent is rejected by the contract | an unregistered address calling `submitDecision` reverts with `UnauthorisedAgent` |
+| Tampering is detectable | `verify()` returns `true` for the anchored digests and `false` for an edited output |
+
+Gas: ~201k–218k per `submitDecision`. The deployer is a throwaway key holding only test gas.
 
 ## Measured results
 

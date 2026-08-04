@@ -147,6 +147,96 @@ def test_anchor_result_serialises_for_the_api():
     payload = AnchorResult(anchored=False, reason="no chain").as_dict()
     assert payload["anchored"] is False
     assert "explorer_url" in payload
+    assert payload["blocked_by_policy"] is False
+
+
+# --- custom error decoding ---------------------------------------------------------------
+
+def _client_with_abi() -> ChainClient:
+    """A client bound to the real error ABI, without needing a chain."""
+    client = ChainClient(
+        deployment={
+            "chainId": 11155111,
+            "contracts": {
+                "DecisionProof": {
+                    "address": "0x" + "22" * 20,
+                    "abi": [
+                        {
+                            "type": "error",
+                            "name": "ApprovalRequired",
+                            "inputs": [{"name": "decisionId", "type": "uint256"}],
+                        },
+                        {
+                            "type": "error",
+                            "name": "UnauthorisedAgent",
+                            "inputs": [{"name": "caller", "type": "address"}],
+                        },
+                    ],
+                }
+            },
+        }
+    )
+    client._error_selectors = client._build_error_selectors()
+    return client
+
+
+def test_approval_required_selector_matches_the_real_chain():
+    """0xb0be42d3 is what Sepolia actually returned for ApprovalRequired(uint256).
+
+    Public RPCs return raw revert data, so matching on the error *name* in an exception string
+    works against a local Hardhat node and silently stops working on a real testnet.
+    """
+    client = _client_with_abi()
+    assert client._error_selectors["0xb0be42d3"] == "ApprovalRequired"
+
+
+def test_a_raw_revert_payload_decodes_to_the_error_name():
+    client = _client_with_abi()
+    raw = (
+        "ContractCustomError: ('0xb0be42d30000000000000000000000000000000000000000"
+        "000000000000000000000001',)"
+    )
+    assert client._decode_error(raw) == "ApprovalRequired"
+
+
+def test_a_decoded_provider_message_still_matches():
+    """Hardhat decodes it for us; both shapes must work."""
+    client = _client_with_abi()
+    assert client._decode_error("reverted with custom error 'ApprovalRequired(1)'") == (
+        "ApprovalRequired"
+    )
+
+
+def test_an_unrelated_failure_decodes_to_nothing():
+    client = _client_with_abi()
+    assert client._decode_error("ConnectionError: RPC timed out") == ""
+
+
+def test_a_policy_block_is_distinguished_from_a_real_failure():
+    """A high-risk decision failing to finalise is the control working, not an error, and the
+    demo has to say so in those words."""
+    blocked = AnchorResult(anchored=False, error="ApprovalRequired", reason="…")
+    broken = AnchorResult(anchored=False, error="", reason="ConnectionError")
+
+    assert blocked.blocked_by_policy
+    assert not broken.blocked_by_policy
+
+
+def test_unauthorised_agent_also_counts_as_a_policy_block():
+    assert AnchorResult(anchored=False, error="UnauthorisedAgent").blocked_by_policy
+
+
+def test_selectors_are_built_from_every_deployed_contract():
+    from app.blockchain.client import load_deployment
+
+    deployment = load_deployment()
+    if deployment is None:
+        pytest.skip("no deployment recorded")
+    client = ChainClient(deployment=deployment)
+    selectors = client._build_error_selectors()
+    assert "ApprovalRequired" in selectors.values()
+    assert "UnauthorisedAgent" in selectors.values()
+    assert all(s.startswith("0x") and len(s) == 10 for s in selectors)
 
 
 # --- persistence ----------------------------------------------------------------------------

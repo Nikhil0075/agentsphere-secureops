@@ -2,20 +2,20 @@
   "backend": "deterministic",
   "runs": [
     {
-      "actual": "BenignPositive",
-      "alerts": 4,
-      "baseline": "BenignPositive",
-      "clusters": 2,
-      "confidence": 0.5604,
+      "actual": "TruePositive",
+      "alerts": 185,
+      "baseline": "TruePositive",
+      "clusters": 98,
+      "confidence": 0.7924,
       "correct": true,
-      "decision_id": "DEC-49b898416bb7",
+      "decision_id": "DEC-53b67c84a72f",
       "degraded": [],
-      "evidence_hash": "0x219c3f6e000c976b65aaf0fead82d16edf4b474632652a6980d936b591a19fd2",
-      "incident_id": "INC-00b71d3f2cbc",
+      "evidence_hash": "0xd161602f863ea8e8937743d7428617fb19e6b874e76fa0a95b9309f762aa8d9e",
+      "incident_id": "INC-e69c9785084c",
       "latency_ms": 0,
-      "output_hash": "0x33163f1db136e1a6f3b421ebd2304ebd72f47fc63b868e19c76a68e8e26a368c",
-      "predicted": "BenignPositive",
-      "workflow_id": "WF-1013d0017190"
+      "output_hash": "0xa4e7dc971a23c3f990f44f616f4cca199088ba595615dfdb6247a14c31a51e32",
+      "predicted": "TruePositive",
+      "workflow_id": "WF-bfb43eb3d534"
     }
   ]
 }
