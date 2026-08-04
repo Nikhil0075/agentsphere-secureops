@@ -1,0 +1,206 @@
+"""Run the agent workflow end to end.
+
+    python scripts/run_demo.py                              # first showcase incident, offline
+    python scripts/run_demo.py --incident INC-0837694b8b09
+    python scripts/run_demo.py --backend openai
+    python scripts/run_demo.py --all-showcase --quiet       # every showcase incident + metrics
+
+The Day 3 exit criterion, executable: an incident goes from selection to a triage label with no
+manual intervention, and scattered alerts visibly collapse into fewer clusters.
+
+The default backend is ``deterministic`` — no network, no API key.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.agents.llm import build_client  # noqa: E402
+from app.config import METRICS_DIR, ensure_dirs  # noqa: E402
+from app.data import incidents as incidents_mod  # noqa: E402
+from app.data import loader  # noqa: E402
+from app.db import session as db  # noqa: E402
+from app.observability.logging import persist_agent_run  # noqa: E402
+from app.orchestration.workflow import Workflow, WorkflowResult  # noqa: E402
+from app.retrieval.base import EntityOverlapRetriever  # noqa: E402
+from app.services import scoring  # noqa: E402
+
+RUN_METRICS = METRICS_DIR / "workflow_runs.json"
+
+
+def print_result(result: WorkflowResult) -> None:
+    state = result.state
+    print(f"\n{'=' * 74}")
+    print(f"incident {state.incident_id}   workflow {state.workflow_id}")
+    print("=" * 74)
+
+    if result.context.correlation:
+        c = result.context.correlation
+        # ASCII only: the Windows console defaults to cp1252 and a stray arrow or ellipsis
+        # crashes the run at the point where it is supposed to be showing off.
+        print(
+            f"\ncorrelation  {c.alert_count} alert(s) -> {c.cluster_count} cluster(s) "
+            f"({c.reduction:.0%} reduction, largest {c.largest_cluster})"
+        )
+        for cluster in c.clusters[:3]:
+            print(
+                f"    {cluster.cluster_id}: {cluster.size} alert(s) linked by "
+                f"{', '.join(cluster.linking_entities[:3]) or 'time proximity'}"
+            )
+
+    if state.baseline:
+        print(
+            f"\nbaseline     {state.baseline.label.value} "
+            f"@ {state.baseline.confidence:.2f} ({state.baseline.model_name})"
+        )
+
+    print("\nagents")
+    for run in state.runs:
+        flag = "ok " if run.status == "ok" else run.status
+        print(
+            f"    {run.sequence}. {run.agent:14s} {flag:10s} {run.latency_ms:5d}ms  "
+            f"attempts={run.attempts}  {run.output_hash[:18]}..."
+        )
+
+    if state.detection:
+        print(f"\ndetection    severity {state.detection.severity_score:.2f}")
+        print(f"             {state.detection.initial_reason[:200]}")
+    if state.correlation:
+        print(
+            f"\ncorrelated   bundle {len(state.correlation.evidence_bundle)} evidence id(s), "
+            f"{len(state.correlation.relationships)} relationship(s), "
+            f"{len(state.correlation.timeline)} timeline event(s)"
+        )
+        for gap in state.correlation.missing_information[:3]:
+            print(f"             gap: {gap}")
+    if state.investigation:
+        print(
+            f"\ninvestigation {len(state.investigation.similar_cases)} similar case(s), "
+            f"{len(state.investigation.mitre_mapping)} MITRE mapping(s)"
+        )
+        print(f"             {state.investigation.investigation_summary[:220]}")
+    if state.triage:
+        print(f"\nTRIAGE       {state.triage.label.value} @ {state.triage.confidence:.2f}")
+        print(f"             cites {len(state.triage.supporting_evidence_ids)} evidence id(s)")
+        print(f"             {state.triage.rationale[:260]}")
+
+    print(f"\nevidence hash {state.evidence_hash}")
+    print(f"output hash   {state.output_hash}")
+    if result.degraded_agents():
+        print(f"\ndegraded: {', '.join(result.degraded_agents())}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--incident", help="incident id; defaults to the first showcase case")
+    parser.add_argument("--backend", choices=["deterministic", "openai", "cache"])
+    parser.add_argument("--all-showcase", action="store_true")
+    parser.add_argument("--limit", type=int, default=0, help="cap on --all-showcase")
+    parser.add_argument("--no-persist", action="store_true", help="skip writing to SQLite")
+    parser.add_argument("--quiet", action="store_true", help="summary only")
+    args = parser.parse_args()
+
+    ensure_dirs()
+    evidence, incidents = loader.load_prepared()
+    model = scoring.load_baseline()
+
+    if "is_showcase" in incidents:
+        showcase = incidents[incidents["is_showcase"]].sort_values("incident_id")
+    else:
+        showcase = incidents.head(10)
+
+    if args.all_showcase:
+        targets = showcase["incident_id"].tolist()
+        if args.limit:
+            targets = targets[: args.limit]
+    elif args.incident:
+        targets = [args.incident]
+    else:
+        if showcase.empty:
+            print("no showcase incidents; run scripts/prepare_data.py", file=sys.stderr)
+            return 1
+        targets = [showcase["incident_id"].iloc[0]]
+
+    client = build_client(args.backend)
+    print(f"backend: {client.backend} ({getattr(client, 'model', '')})")
+
+    # Retrieval over the corpus. Built once; the Day 4 hybrid index replaces it here.
+    retriever = EntityOverlapRetriever(evidence, incidents)
+    workflow = Workflow(client=client, retriever=retriever)
+
+    summaries = []
+    for incident_id in targets:
+        match = incidents[incidents["incident_id"] == incident_id]
+        if match.empty:
+            print(f"unknown incident {incident_id}", file=sys.stderr)
+            return 1
+        row = match.iloc[0]
+        rows = incidents_mod.evidence_for(evidence, incident_id)
+
+        result = workflow.run(row, rows, baseline_model=model)
+        if not args.quiet:
+            print_result(result)
+
+        state = result.state
+        correct = bool(state.triage) and state.triage.label.value == row["label"]
+        summaries.append(
+            {
+                "incident_id": incident_id,
+                "workflow_id": state.workflow_id,
+                "predicted": state.triage.label.value if state.triage else "",
+                "actual": row["label"],
+                "correct": correct,
+                "confidence": state.triage.confidence if state.triage else 0.0,
+                "baseline": state.baseline.label.value if state.baseline else "",
+                "alerts": result.context.correlation.alert_count if result.context.correlation else 0,
+                "clusters": state.correlation_clusters,
+                "latency_ms": result.total_latency_ms(),
+                "degraded": result.degraded_agents(),
+                "evidence_hash": state.evidence_hash,
+                "output_hash": state.output_hash,
+            }
+        )
+
+        if not args.no_persist:
+            with db.session() as conn:
+                conn.executescript(db.SCHEMA_PATH.read_text(encoding="utf-8"))
+                for run in state.runs:
+                    output = getattr(state, run.agent, None)
+                    persist_agent_run(
+                        conn,
+                        state.workflow_id,
+                        state.incident_id,
+                        run,
+                        json.dumps(output.model_dump(mode="json"), sort_keys=True)
+                        if output
+                        else "",
+                    )
+
+    if len(summaries) > 1:
+        correct = sum(1 for s in summaries if s["correct"])
+        collapsed = sum(1 for s in summaries if s["clusters"] < s["alerts"])
+        print(f"\n{'=' * 74}")
+        print(f"{len(summaries)} incident(s)")
+        print(f"  agreement with ground truth  {correct}/{len(summaries)} "
+              f"({correct / len(summaries):.0%})")
+        print(f"  alerts collapsed             {collapsed}/{len(summaries)}")
+        print(f"  degraded runs                "
+              f"{sum(1 for s in summaries if s['degraded'])}/{len(summaries)}")
+        print(f"  mean latency                 "
+              f"{sum(s['latency_ms'] for s in summaries) / len(summaries):.0f}ms")
+
+    RUN_METRICS.write_text(
+        json.dumps({"backend": client.backend, "runs": summaries}, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    print(f"\nrun records -> {RUN_METRICS}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -19,10 +19,13 @@ import json  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
-from app.config import METRICS_DIR  # noqa: E402
+from app.agents.llm import build_client  # noqa: E402
+from app.config import METRICS_DIR, settings  # noqa: E402
 from app.data import incidents as incidents_mod  # noqa: E402
 from app.data import loader  # noqa: E402
+from app.orchestration.workflow import Workflow  # noqa: E402
 from app.policies import risk  # noqa: E402
+from app.retrieval.base import EntityOverlapRetriever  # noqa: E402
 from app.services import scoring  # noqa: E402
 from app.ui import panels  # noqa: E402
 
@@ -43,6 +46,16 @@ def load_queue() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     manifest_path = loader.DATA_PROCESSED / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
     return evidence, table, manifest
+
+
+@st.cache_resource(show_spinner="Building the retrieval index…")
+def build_workflow(_evidence: pd.DataFrame, _incidents: pd.DataFrame) -> Workflow:
+    """One workflow per session. The retriever indexes the whole corpus, so rebuilding it on
+    every rerun would make the button feel broken."""
+    return Workflow(
+        client=build_client(),
+        retriever=EntityOverlapRetriever(_evidence, _incidents),
+    )
 
 
 @st.cache_data(show_spinner=False)
@@ -84,8 +97,8 @@ def main() -> None:
             | view["summary"].str.lower().str.contains(needle)
         ]
 
-    queue_tab, detail_tab, metrics_tab = st.tabs(
-        ["Incident queue", "Incident detail", "Baseline metrics"]
+    queue_tab, detail_tab, workflow_tab, metrics_tab = st.tabs(
+        ["Incident queue", "Incident detail", "Agent workflow", "Baseline metrics"]
     )
 
     with queue_tab:
@@ -106,6 +119,33 @@ def main() -> None:
                 baseline_confidence=row.get("baseline_tp_probability"),
             )
             panels.detail_panel(row, rows, breakdown)
+
+    with workflow_tab:
+        selected = st.session_state.get("selected_incident")
+        if not selected or selected not in set(table["incident_id"]):
+            selected = view["incident_id"].iloc[0] if len(view) else None
+
+        if selected is None:
+            st.info("Select an incident on the queue tab first.")
+        else:
+            st.caption(
+                f"Backend: `{settings.llm_backend}`. The deterministic backend needs no network "
+                "and no API key."
+            )
+            if st.button(f"Run the agent workflow on {selected}", type="primary"):
+                row = table[table["incident_id"] == selected].iloc[0]
+                rows = incidents_mod.evidence_for(evidence, selected)
+                with st.spinner("Running Detection -> Correlation -> Investigation -> Triage…"):
+                    result = build_workflow(evidence, table).run(
+                        row, rows, baseline_model=scoring.load_baseline()
+                    )
+                st.session_state["last_result"] = result
+
+            result = st.session_state.get("last_result")
+            if result is not None and result.state.incident_id == selected:
+                panels.correlation_panel(result)
+            elif result is not None:
+                st.info("The last run was for a different incident. Run it again for this one.")
 
     with metrics_tab:
         panels.metrics_panel(metrics)

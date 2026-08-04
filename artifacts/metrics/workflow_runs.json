@@ -1,0 +1,20 @@
+{
+  "backend": "cache",
+  "runs": [
+    {
+      "actual": "TruePositive",
+      "alerts": 7,
+      "baseline": "TruePositive",
+      "clusters": 7,
+      "confidence": 0.86,
+      "correct": true,
+      "degraded": [],
+      "evidence_hash": "0xd58d05a7601a13b9724aaafe2a9b647143a76d4d80aedafeb63ce2b8d2016f43",
+      "incident_id": "INC-002cdb785d37",
+      "latency_ms": 0,
+      "output_hash": "0xc59128396f9baa36cebdbfb3a226bcda54e2a883bf6da0669697fe1e3391b617",
+      "predicted": "TruePositive",
+      "workflow_id": "WF-cff8648014e1"
+    }
+  ]
+}

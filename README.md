@@ -24,6 +24,28 @@ Phase 0 build, days 1–3 of 7. See `docs/` and the master plan for the full sch
 | 5 (8 Aug) | Solidity contracts, testnet deployment, on-chain approval | not started |
 | 6–7 (9–10 Aug) | Proof verification UI, metrics dashboard, freeze | not started |
 
+## Measured results so far
+
+Real numbers on real Microsoft GUIDE data, not projections. Reproduce them with the commands
+below.
+
+| Measurement | Value |
+|---|---|
+| Working set | 5,000 incidents / 591,340 evidence rows from `GUIDE_Train.csv` |
+| Baseline (LightGBM 4.7.0) | accuracy **0.7072**, macro F1 **0.6774**, TP recall **0.6092** on 1,004 held-out incidents |
+| Entity graph | 96,351 nodes, 26,194 edges; worst hub `process:6` at degree 1,025 |
+| Alert correlation | collapses on 18/30 showcase incidents; largest observed 1,313 alerts → 764 clusters (-42%) |
+| Agent chain, offline | 30/30 showcase incidents complete, 0 degraded runs, <1 ms/agent |
+| Agent chain, live (gpt-4o-mini) | 4/4 agents valid on first attempt, ~22 s end to end |
+| Cache replay | byte-identical output hashes to the live run, zero network |
+| Tests | 135 passing |
+
+Two honesty notes. The 87% agreement the demo runner reports across showcase incidents is **not**
+a headline metric — the showcase set is deliberately filtered to a 3–60 evidence band, which is a
+biased sample. And `hour_of_day` ranks as the baseline's top feature, which is more likely a
+temporal artefact of the dataset than a security signal; it is worth pruning before the numbers
+are quoted anywhere.
+
 ## Quick start
 
 ```bash

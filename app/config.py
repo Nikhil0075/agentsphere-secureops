@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -32,7 +32,9 @@ def _int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class Settings:
     llm_backend: str = os.getenv("LLM_BACKEND", "deterministic")
-    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    # repr=False: a dataclass repr appears in tracebacks, pytest failure output and log lines.
+    # Without this the API key is printed verbatim the first time anything raises near it.
+    openai_api_key: str = field(default=os.getenv("OPENAI_API_KEY", ""), repr=False)
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     llm_timeout_seconds: int = _int("LLM_TIMEOUT_SECONDS", 45)
     llm_max_retries: int = _int("LLM_MAX_RETRIES", 1)

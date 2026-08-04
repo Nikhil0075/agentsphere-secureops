@@ -1,0 +1,216 @@
+{
+  "incidents_where_alerts_collapsed": 18,
+  "per_incident": [
+    {
+      "alerts": 7,
+      "clusters": 7,
+      "incident_id": "INC-002cdb785d37",
+      "largest_cluster": 1,
+      "reduction": 0.0
+    },
+    {
+      "alerts": 4,
+      "clusters": 2,
+      "incident_id": "INC-00b71d3f2cbc",
+      "largest_cluster": 2,
+      "reduction": 0.5
+    },
+    {
+      "alerts": 11,
+      "clusters": 10,
+      "incident_id": "INC-011b552f92f1",
+      "largest_cluster": 2,
+      "reduction": 0.0909
+    },
+    {
+      "alerts": 7,
+      "clusters": 7,
+      "incident_id": "INC-016c5a1b5220",
+      "largest_cluster": 1,
+      "reduction": 0.0
+    },
+    {
+      "alerts": 11,
+      "clusters": 10,
+      "incident_id": "INC-0199ddc3503d",
+      "largest_cluster": 2,
+      "reduction": 0.0909
+    },
+    {
+      "alerts": 20,
+      "clusters": 19,
+      "incident_id": "INC-019ade45fefa",
+      "largest_cluster": 2,
+      "reduction": 0.05
+    },
+    {
+      "alerts": 23,
+      "clusters": 23,
+      "incident_id": "INC-01b337d461ce",
+      "largest_cluster": 1,
+      "reduction": 0.0
+    },
+    {
+      "alerts": 7,
+      "clusters": 6,
+      "incident_id": "INC-01e16944158f",
+      "largest_cluster": 2,
+      "reduction": 0.1429
+    },
+    {
+      "alerts": 26,
+      "clusters": 18,
+      "incident_id": "INC-020335f5c65e",
+      "largest_cluster": 4,
+      "reduction": 0.3077
+    },
+    {
+      "alerts": 5,
+      "clusters": 5,
+      "incident_id": "INC-02134704b602",
+      "largest_cluster": 1,
+      "reduction": 0.0
+    },
+    {
+      "alerts": 10,
+      "clusters": 9,
+      "incident_id": "INC-0242ce727c47",
+      "largest_cluster": 2,
+      "reduction": 0.1
+    },
+    {
+      "alerts": 4,
+      "clusters": 4,
+      "incident_id": "INC-02f69b5753d8",
+      "largest_cluster": 1,
+      "reduction": 0.0
+    },
+    {
+      "alerts": 20,
+      "clusters": 11,
+      "incident_id": "INC-031dcc239493",
+      "largest_cluster": 6,
+      "reduction": 0.45
+    },
+    {
+      "alerts": 9,
+      "clusters": 8,
+      "incident_id": "INC-039cd6dd2b9f",
+      "largest_cluster": 2,
+      "reduction": 0.1111
+    },
+    {
+      "alerts": 51,
+      "clusters": 45,
+      "incident_id": "INC-03c330695cea",
+      "largest_cluster": 6,
+      "reduction": 0.1176
+    },
+    {
+      "alerts": 4,
+      "clusters": 3,
+      "incident_id": "INC-051c410838ee",
+      "largest_cluster": 2,
+      "reduction": 0.25
+    },
+    {
+      "alerts": 6,
+      "clusters": 5,
+      "incident_id": "INC-0548c1fe5b54",
+      "largest_cluster": 2,
+      "reduction": 0.1667
+    },
+    {
+      "alerts": 5,
+      "clusters": 5,
+      "incident_id": "INC-056dbdff3e24",
+      "largest_cluster": 1,
+      "reduction": 0.0
+    },
+    {
+      "alerts": 10,
+      "clusters": 5,
+      "incident_id": "INC-069fe63fde74",
+      "largest_cluster": 6,
+      "reduction": 0.5
+    },
+    {
+      "alerts": 8,
+      "clusters": 8,
+      "incident_id": "INC-06df09cdb49d",
+      "largest_cluster": 1,
+      "reduction": 0.0
+    },
+    {
+      "alerts": 25,
+      "clusters": 15,
+      "incident_id": "INC-0740ba961247",
+      "largest_cluster": 7,
+      "reduction": 0.4
+    },
+    {
+      "alerts": 21,
+      "clusters": 10,
+      "incident_id": "INC-0837694b8b09",
+      "largest_cluster": 8,
+      "reduction": 0.5238
+    },
+    {
+      "alerts": 40,
+      "clusters": 28,
+      "incident_id": "INC-0874da0f54ed",
+      "largest_cluster": 3,
+      "reduction": 0.3
+    },
+    {
+      "alerts": 15,
+      "clusters": 11,
+      "incident_id": "INC-0967085c1a49",
+      "largest_cluster": 4,
+      "reduction": 0.2667
+    },
+    {
+      "alerts": 3,
+      "clusters": 3,
+      "incident_id": "INC-0abdb2a523a5",
+      "largest_cluster": 1,
+      "reduction": 0.0
+    },
+    {
+      "alerts": 5,
+      "clusters": 5,
+      "incident_id": "INC-0bc10d353a3d",
+      "largest_cluster": 1,
+      "reduction": 0.0
+    },
+    {
+      "alerts": 4,
+      "clusters": 4,
+      "incident_id": "INC-1010bda7f63d",
+      "largest_cluster": 1,
+      "reduction": 0.0
+    },
+    {
+      "alerts": 56,
+      "clusters": 38,
+      "incident_id": "INC-10421fc45db0",
+      "largest_cluster": 9,
+      "reduction": 0.3214
+    },
+    {
+      "alerts": 5,
+      "clusters": 5,
+      "incident_id": "INC-108a5430776f",
+      "largest_cluster": 1,
+      "reduction": 0.0
+    },
+    {
+      "alerts": 21,
+      "clusters": 21,
+      "incident_id": "INC-11c961765d56",
+      "largest_cluster": 1,
+      "reduction": 0.0
+    }
+  ],
+  "showcase_incidents": 30
+}

@@ -192,6 +192,129 @@ def detail_panel(row: pd.Series, evidence: pd.DataFrame, breakdown: RiskBreakdow
         st.caption(f"split: {row.get('split', '—')}")
 
 
+def correlation_panel(result) -> None:
+    """Alert clustering and the agent timeline for one workflow run."""
+    state = result.state
+    correlation = result.context.correlation
+
+    st.subheader("Alert correlation")
+    st.caption(
+        "Union-Find with path compression **and** union by rank — both, which is what the "
+        "O(α(n)) bound actually requires. Alerts sharing an account, device, IP or file hash "
+        "collapse into one cluster."
+    )
+
+    if correlation is None:
+        st.info("No alerts to correlate on this incident.")
+    else:
+        a, b, c = st.columns(3)
+        a.metric("Alerts", correlation.alert_count)
+        b.metric("Clusters", correlation.cluster_count, f"-{correlation.reduction:.0%}")
+        c.metric("Largest cluster", correlation.largest_cluster)
+
+        if correlation.reduction > 0:
+            st.success(
+                f"{correlation.alert_count} scattered alerts collapsed into "
+                f"{correlation.cluster_count} clusters."
+            )
+        else:
+            st.info(
+                "No alerts shared a linking entity, so nothing collapsed. That is a real "
+                "outcome, not a failure — GUIDE carries one evidence row per alert and many "
+                "incidents genuinely have no shared entity."
+            )
+
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "cluster": c.cluster_id,
+                        "alerts": c.size,
+                        "evidence": c.evidence_count,
+                        "linked by": ", ".join(c.linking_entities[:4]) or "time proximity",
+                    }
+                    for c in correlation.clusters[:25]
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+
+    st.divider()
+    st.subheader("Agent timeline")
+    st.caption(
+        "Every call is recorded with its latency, backend, retry count and output hash. A "
+        "degraded agent shows as `fallback`, never as `ok` — a silent fallback would corrupt "
+        "the metrics."
+    )
+
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "#": r.sequence,
+                    "agent": r.agent,
+                    "status": r.status,
+                    "attempts": r.attempts,
+                    "latency ms": r.latency_ms,
+                    "backend": r.backend,
+                    "tokens": r.prompt_tokens + r.completion_tokens,
+                    "output hash": r.output_hash[:18] + "...",
+                }
+                for r in state.runs
+            ]
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    if result.degraded_agents():
+        st.warning(f"Degraded: {', '.join(result.degraded_agents())}")
+
+    if state.triage:
+        st.divider()
+        left, right = st.columns([2, 1])
+        with left:
+            st.markdown(f"### Triage: {LABEL_BADGES.get(state.triage.label.value)}")
+            st.progress(
+                state.triage.confidence, text=f"confidence {state.triage.confidence:.0%}"
+            )
+            st.write(state.triage.rationale)
+            st.caption(
+                "Cited evidence: " + ", ".join(state.triage.supporting_evidence_ids[:8])
+            )
+        with right:
+            if state.baseline:
+                st.metric(
+                    "Non-LLM baseline",
+                    state.baseline.label.value,
+                    f"{state.baseline.confidence:.0%}",
+                )
+                agrees = state.baseline.label.value == state.triage.label.value
+                st.caption("agrees with the agent" if agrees else "**disagrees** with the agent")
+
+    for name, title in (
+        ("detection", "Detection"),
+        ("correlation", "Correlation"),
+        ("investigation", "Investigation"),
+    ):
+        output = getattr(state, name, None)
+        if output is not None:
+            with st.expander(f"{title} output"):
+                st.json(output.model_dump(mode="json"))
+
+    st.divider()
+    st.markdown("**Decision integrity** — keccak256 over canonical JSON")
+    st.caption(
+        "These are the digests Day 5 anchors on-chain. Sorted keys, no whitespace: the same "
+        "evidence always produces the same hash, so a later mismatch means the stored data "
+        "changed."
+    )
+    st.code(
+        f"evidence  {state.evidence_hash}\noutput    {state.output_hash}", language=None
+    )
+
+
 def metrics_panel(metrics: dict) -> None:
     st.subheader("Non-LLM baseline")
     if not metrics:

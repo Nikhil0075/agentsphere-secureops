@@ -1,0 +1,121 @@
+{
+  "build_seconds": 520.11,
+  "by_type": {
+    "account": 33176,
+    "device": 4433,
+    "filehash": 8569,
+    "ip": 23214,
+    "mailbox": 15024,
+    "process": 9496,
+    "url": 2439
+  },
+  "edges": 26194,
+  "hub_count": 1,
+  "hub_degree_threshold": 150,
+  "hubs": [
+    {
+      "degree": 1025,
+      "incidents": 7,
+      "node": "process:6"
+    },
+    {
+      "degree": 53,
+      "incidents": 15,
+      "node": "account:1"
+    },
+    {
+      "degree": 53,
+      "incidents": 1,
+      "node": "filehash:55"
+    },
+    {
+      "degree": 49,
+      "incidents": 3,
+      "node": "account:1004"
+    },
+    {
+      "degree": 47,
+      "incidents": 189,
+      "node": "process:0"
+    },
+    {
+      "degree": 44,
+      "incidents": 1,
+      "node": "process:1024"
+    },
+    {
+      "degree": 40,
+      "incidents": 1,
+      "node": "account:57"
+    },
+    {
+      "degree": 34,
+      "incidents": 8,
+      "node": "account:217"
+    },
+    {
+      "degree": 30,
+      "incidents": 157,
+      "node": "process:1"
+    },
+    {
+      "degree": 30,
+      "incidents": 12,
+      "node": "process:167"
+    },
+    {
+      "degree": 30,
+      "incidents": 1,
+      "node": "process:186"
+    },
+    {
+      "degree": 30,
+      "incidents": 1,
+      "node": "process:458"
+    },
+    {
+      "degree": 28,
+      "incidents": 1,
+      "node": "filehash:1225"
+    },
+    {
+      "degree": 25,
+      "incidents": 3,
+      "node": "account:2127"
+    },
+    {
+      "degree": 25,
+      "incidents": 10,
+      "node": "process:192"
+    },
+    {
+      "degree": 25,
+      "incidents": 2,
+      "node": "process:219"
+    },
+    {
+      "degree": 23,
+      "incidents": 3,
+      "node": "account:6757"
+    },
+    {
+      "degree": 22,
+      "incidents": 8,
+      "node": "account:1583"
+    },
+    {
+      "degree": 20,
+      "incidents": 7,
+      "node": "account:1832"
+    },
+    {
+      "degree": 19,
+      "incidents": 1,
+      "node": "account:5773"
+    }
+  ],
+  "max_degree": 1025,
+  "mean_degree": 0.54,
+  "median_degree": 0,
+  "nodes": 96351
+}
