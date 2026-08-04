@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+
+# Data is never committed — scripts/prepare_data.py regenerates it deterministically.
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Generated artifacts. Metrics and schemas ARE committed (they are evidence); models and
+# caches are not.
+artifacts/models/*
+artifacts/llm_cache/*
+!artifacts/**/.gitkeep
+
+*.db
+*.db-wal
+*.db-shm
+*.log
+.DS_Store

@@ -1,0 +1,425 @@
+{
+  "alerts_per_incident": {
+    "max": 5,
+    "median": 2.0,
+    "min": 1
+  },
+  "category_counts": {
+    "CommandAndControl": 190,
+    "CredentialAccess": 164,
+    "Discovery": 197,
+    "Execution": 187,
+    "Exfiltration": 130,
+    "Impact": 83,
+    "InitialAccess": 222,
+    "LateralMovement": 167,
+    "Persistence": 126,
+    "SuspiciousActivity": 234
+  },
+  "counts": {
+    "alerts": 429,
+    "evidence_rows": 1700,
+    "incidents": 200,
+    "orgs": 5
+  },
+  "entity_hubs": {
+    "account": {
+      "distinct_values": 57,
+      "max_incidents_touched": 19,
+      "top": [
+        {
+          "incidents": 19,
+          "value": "svc-backup@contoso.com"
+        },
+        {
+          "incidents": 8,
+          "value": "user045@contoso.com"
+        },
+        {
+          "incidents": 7,
+          "value": "user010@contoso.com"
+        },
+        {
+          "incidents": 7,
+          "value": "user047@contoso.com"
+        },
+        {
+          "incidents": 6,
+          "value": "user007@contoso.com"
+        },
+        {
+          "incidents": 6,
+          "value": "user015@contoso.com"
+        },
+        {
+          "incidents": 5,
+          "value": "user022@contoso.com"
+        },
+        {
+          "incidents": 5,
+          "value": "user013@contoso.com"
+        },
+        {
+          "incidents": 5,
+          "value": "user017@contoso.com"
+        },
+        {
+          "incidents": 5,
+          "value": "user034@contoso.com"
+        }
+      ]
+    },
+    "device": {
+      "distinct_values": 71,
+      "max_incidents_touched": 7,
+      "top": [
+        {
+          "incidents": 7,
+          "value": "dev-052"
+        },
+        {
+          "incidents": 6,
+          "value": "dev-033"
+        },
+        {
+          "incidents": 6,
+          "value": "dev-059"
+        },
+        {
+          "incidents": 5,
+          "value": "dev-015"
+        },
+        {
+          "incidents": 5,
+          "value": "dev-001"
+        },
+        {
+          "incidents": 5,
+          "value": "dev-004"
+        },
+        {
+          "incidents": 5,
+          "value": "dev-060"
+        },
+        {
+          "incidents": 5,
+          "value": "dev-027"
+        },
+        {
+          "incidents": 5,
+          "value": "dev-055"
+        },
+        {
+          "incidents": 5,
+          "value": "dev-038"
+        }
+      ]
+    },
+    "filehash": {
+      "distinct_values": 928,
+      "max_incidents_touched": 1,
+      "top": [
+        {
+          "incidents": 1,
+          "value": "005f82c1b2415fffb3ff33141e4ca6e2887760b8dbc516d76b0d0487be100b7b"
+        },
+        {
+          "incidents": 1,
+          "value": "00b06a7a626b468b7a1195ce8969aaf581770d467086d4d0bd1e9a38954fa71c"
+        },
+        {
+          "incidents": 1,
+          "value": "01c6d8cec39755b12bdb208b602e01ff9703dc48462b16831a366cc3aeff774f"
+        },
+        {
+          "incidents": 1,
+          "value": "022cc2036237127577774292356ce7126ed996263f9fd95bcfd0da1bdabbd9e4"
+        },
+        {
+          "incidents": 1,
+          "value": "0283b7e591bb0507ea4f4968e0ed63bdafbe80b69aa87a938fcc5e9bb493a7e7"
+        },
+        {
+          "incidents": 1,
+          "value": "03192c4d43e5118460b54cbab714dae431d2d6660b1f3d8fbf5d325efcf424b9"
+        },
+        {
+          "incidents": 1,
+          "value": "03b77a20d7aad95d9a861f697b17c0c4ab2143a0e03334bdfba11b3c84e5a284"
+        },
+        {
+          "incidents": 1,
+          "value": "03f6501feb97011b7da9cdad5a08b8670e11cd874a82576bcc795ac692031a78"
+        },
+        {
+          "incidents": 1,
+          "value": "046dc3afde97a295464cf8ef1ef87506dd1c9a2debc18794776b8a20a09ccc0b"
+        },
+        {
+          "incidents": 1,
+          "value": "04cabc2ecafd93cbc91b7a68b46818482c12f0ade2d63a3810a73e0fd1efd536"
+        }
+      ]
+    },
+    "ip": {
+      "distinct_values": 127,
+      "max_incidents_touched": 37,
+      "top": [
+        {
+          "incidents": 37,
+          "value": "203.0.113.10"
+        },
+        {
+          "incidents": 4,
+          "value": "198.51.100.103"
+        },
+        {
+          "incidents": 3,
+          "value": "198.51.100.123"
+        },
+        {
+          "incidents": 3,
+          "value": "198.51.100.180"
+        },
+        {
+          "incidents": 3,
+          "value": "198.51.100.163"
+        },
+        {
+          "incidents": 3,
+          "value": "198.51.100.146"
+        },
+        {
+          "incidents": 2,
+          "value": "198.51.100.124"
+        },
+        {
+          "incidents": 2,
+          "value": "198.51.100.138"
+        },
+        {
+          "incidents": 2,
+          "value": "198.51.100.131"
+        },
+        {
+          "incidents": 2,
+          "value": "198.51.100.153"
+        }
+      ]
+    },
+    "mailbox": {
+      "distinct_values": 305,
+      "max_incidents_touched": 1,
+      "top": [
+        {
+          "incidents": 1,
+          "value": "msg-103076"
+        },
+        {
+          "incidents": 1,
+          "value": "msg-105500"
+        },
+        {
+          "incidents": 1,
+          "value": "msg-106416"
+        },
+        {
+          "incidents": 1,
+          "value": "msg-110230"
+        },
+        {
+          "incidents": 1,
+          "value": "msg-111543"
+        },
+        {
+          "incidents": 1,
+          "value": "msg-114053"
+        },
+        {
+          "incidents": 1,
+          "value": "msg-114130"
+        },
+        {
+          "incidents": 1,
+          "value": "msg-115687"
+        },
+        {
+          "incidents": 1,
+          "value": "msg-116840"
+        },
+        {
+          "incidents": 1,
+          "value": "msg-119988"
+        }
+      ]
+    },
+    "process": {
+      "distinct_values": 8,
+      "max_incidents_touched": 166,
+      "top": [
+        {
+          "incidents": 166,
+          "value": "powershell.exe"
+        },
+        {
+          "incidents": 104,
+          "value": "wscript.exe"
+        },
+        {
+          "incidents": 100,
+          "value": "cmd.exe"
+        },
+        {
+          "incidents": 96,
+          "value": "chrome.exe"
+        },
+        {
+          "incidents": 94,
+          "value": "outlook.exe"
+        },
+        {
+          "incidents": 89,
+          "value": "rundll32.exe"
+        },
+        {
+          "incidents": 88,
+          "value": "mimikatz.exe"
+        },
+        {
+          "incidents": 82,
+          "value": "svchost.exe"
+        }
+      ]
+    },
+    "url": {
+      "distinct_values": 40,
+      "max_incidents_touched": 19,
+      "top": [
+        {
+          "incidents": 19,
+          "value": "http://cdn39.example-delivery.net/p"
+        },
+        {
+          "incidents": 18,
+          "value": "http://cdn15.example-delivery.net/p"
+        },
+        {
+          "incidents": 16,
+          "value": "http://cdn20.example-delivery.net/p"
+        },
+        {
+          "incidents": 15,
+          "value": "http://cdn38.example-delivery.net/p"
+        },
+        {
+          "incidents": 15,
+          "value": "http://cdn17.example-delivery.net/p"
+        },
+        {
+          "incidents": 14,
+          "value": "http://cdn12.example-delivery.net/p"
+        },
+        {
+          "incidents": 14,
+          "value": "http://cdn5.example-delivery.net/p"
+        },
+        {
+          "incidents": 14,
+          "value": "http://cdn3.example-delivery.net/p"
+        },
+        {
+          "incidents": 14,
+          "value": "http://cdn32.example-delivery.net/p"
+        },
+        {
+          "incidents": 14,
+          "value": "http://cdn7.example-delivery.net/p"
+        }
+      ]
+    }
+  },
+  "entity_type_counts": {
+    "File": 254,
+    "Ip": 224,
+    "Machine": 236,
+    "MailMessage": 225,
+    "Process": 256,
+    "Url": 256,
+    "User": 249
+  },
+  "evidence_per_incident": {
+    "max": 35,
+    "mean": 8.5,
+    "median": 6.0,
+    "min": 1,
+    "p95": 25.0
+  },
+  "label_distribution": {
+    "BenignPositive": 69,
+    "FalsePositive": 76,
+    "TruePositive": 55
+  },
+  "label_distribution_by_split": {
+    "demo": {
+      "BenignPositive": 3,
+      "FalsePositive": 9,
+      "TruePositive": 4
+    },
+    "train": {
+      "BenignPositive": 52,
+      "FalsePositive": 58,
+      "TruePositive": 39
+    },
+    "val": {
+      "BenignPositive": 14,
+      "FalsePositive": 9,
+      "TruePositive": 12
+    }
+  },
+  "leakage_check": {
+    "incident_in_multiple_splits": 0,
+    "summary_contains_label": 0
+  },
+  "missingness_evidence": {
+    "account_name": 0.0,
+    "account_object_id": 0.0,
+    "account_sid": 0.0,
+    "account_upn": 0.0,
+    "action_granular": 1.0,
+    "action_grouped": 1.0,
+    "alert_id": 0.0,
+    "alert_ref": 0.0,
+    "alert_title": 0.0,
+    "application_name": 0.2524,
+    "category": 0.0,
+    "city": 1.0,
+    "country_code": 0.0,
+    "detector_id": 0.0,
+    "device_id": 0.0,
+    "device_name": 0.0,
+    "email_cluster_id": 1.0,
+    "entity_type": 0.0,
+    "evidence_id": 0.0,
+    "evidence_role": 0.0,
+    "evidence_row_id": 0.0,
+    "file_name": 0.0,
+    "file_sha256": 0.4541,
+    "folder_path": 0.0,
+    "incident_id": 0.0,
+    "incident_ref": 0.0,
+    "ip_address": 0.0,
+    "label": 0.0,
+    "last_verdict": 0.0859,
+    "mailbox_message_id": 0.8206,
+    "mitre_techniques": 0.0441,
+    "org_id": 0.0,
+    "os_family": 0.0,
+    "registry_key": 1.0,
+    "split": 0.0,
+    "state": 1.0,
+    "suspicion_level": 0.0853,
+    "threat_family": 0.5541,
+    "timestamp": 0.0,
+    "url": 0.7182
+  }
+}

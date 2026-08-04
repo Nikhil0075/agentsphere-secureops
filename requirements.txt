@@ -1,0 +1,39 @@
+# AgentSphere SecureOps — Phase 0 dependencies
+# Python 3.13
+
+# --- data layer ---
+pandas>=2.2
+pyarrow>=16.0
+numpy>=1.26
+
+# --- baseline model ---
+# LightGBM is the primary baseline; app/models/baseline.py falls back to sklearn's
+# HistGradientBoostingClassifier automatically if it is unavailable on the host.
+lightgbm>=4.5
+scikit-learn>=1.5
+joblib>=1.4
+matplotlib>=3.8
+
+# --- contracts / validation ---
+pydantic>=2.7
+pydantic-settings>=2.3
+PyYAML>=6.0
+python-dotenv>=1.0
+
+# --- agents / LLM ---
+openai>=1.40
+
+# --- retrieval (Day 4 lands the index; the lexical dep is cheap and already vendored) ---
+rank-bm25>=0.2.2
+
+# --- ui ---
+streamlit>=1.36
+
+# --- proof layer (hashing only in Phase 0 Day 3; contracts land Day 5) ---
+eth-hash[pycryptodome]>=0.7
+
+# --- dataset acquisition ---
+kagglehub>=0.3
+
+# --- tests ---
+pytest>=8.2
