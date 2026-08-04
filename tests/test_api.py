@@ -20,6 +20,25 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.api.main import app  # noqa: E402
 
 
+@pytest.fixture(scope="module", autouse=True)
+def offline_chain():
+    """Keep the suite off the network.
+
+    Once a real deployment exists, ``/api/dataset`` and the proof routes reach a public Sepolia
+    RPC on every call, which took this file from 4s to ~55s and made it fail whenever that
+    endpoint was down. Tests assert the *degradation* path — which is the behaviour that has to
+    hold at demo time anyway — and the chain-available path is covered by
+    tests/test_blockchain_client.py and the Hardhat suite against a real EVM.
+    """
+    from app.api.state import AppState
+    from app.blockchain.client import ChainClient
+
+    unavailable = ChainClient(unavailable_reason="chain disabled for tests")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(AppState, "chain", lambda self: unavailable)
+        yield
+
+
 @pytest.fixture(scope="module")
 def client():
     with TestClient(app) as c:
@@ -45,7 +64,9 @@ def test_dataset_describes_the_corpus(client):
 
 
 def test_dataset_reports_chain_status_without_requiring_one(client):
-    assert "available" in client.get("/api/dataset").json()["chain"]
+    chain = client.get("/api/dataset").json()["chain"]
+    assert chain["available"] is False
+    assert chain["reason"]
 
 
 # --- queue ---------------------------------------------------------------------------------
