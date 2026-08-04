@@ -31,3 +31,7 @@ contracts/dist/
 
 # Deployment records contain throwaway agent keys; addresses go in the README instead.
 artifacts/chain/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/

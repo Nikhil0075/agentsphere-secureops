@@ -2,10 +2,16 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "agentsphere-ui",
+      "name": "agentsphere-api",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "streamlit", "run", "app/ui/main.py"],
-      "port": 8501
+      "runtimeArgs": ["-m", "uvicorn", "app.api.main:app", "--port", "8000"],
+      "port": 8000
+    },
+    {
+      "name": "agentsphere-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "port": 5173
     }
   ]
 }

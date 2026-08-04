@@ -135,7 +135,11 @@ class VerifierAgent(Agent):
         auditable rather than being silently discarded.
         """
         structural = self._structural(context)
+        structural_ids = {c.policy_id for c in structural.policy_checks}
 
+        # On the deterministic backend the model output *is* the structural output, so its checks
+        # would otherwise be re-listed as LLM-VER-001…007 beside the originals. Anything the
+        # structural pass already produced is dropped rather than duplicated.
         model_checks = [
             PolicyCheck(
                 policy_id=f"LLM-{c.policy_id}"[:64],
@@ -143,6 +147,11 @@ class VerifierAgent(Agent):
                 detail=c.detail,
             )
             for c in output.policy_checks
+            if c.policy_id not in structural_ids
+        ]
+        seen_contradictions = set(structural.contradictions)
+        model_contradictions = [
+            c for c in output.contradictions if c not in seen_contradictions
         ]
 
         if structural.verdict is VerifierVerdict.REJECT:
@@ -158,12 +167,12 @@ class VerifierAgent(Agent):
 
         return VerifierOutput(
             verdict=verdict,
-            contradictions=(structural.contradictions + list(output.contradictions))[:15],
+            contradictions=(structural.contradictions + model_contradictions)[:15],
             policy_checks=(list(structural.policy_checks) + model_checks)[:20],
             escalation_required=verdict is not VerifierVerdict.ACCEPT,
             reasoning=(
                 f"{structural.reasoning} Model assessment: {output.reasoning}"
-                if output.reasoning
+                if output.reasoning and output.reasoning != structural.reasoning
                 else structural.reasoning
             )[:1500],
         )

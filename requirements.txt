@@ -23,14 +23,21 @@ python-dotenv>=1.0
 # --- agents / LLM ---
 openai>=1.40
 
-# --- retrieval (Day 4 lands the index; the lexical dep is cheap and already vendored) ---
+# --- retrieval: BM25 + FAISS, fused with RRF ---
+# faiss-cpu is IndexFlatIP only here, which is exact cosine over L2-normalised vectors. At 5,000
+# documents that is the right choice; an HNSW index would be a more complicated way to get a
+# worse answer.
 rank-bm25>=0.2.2
+faiss-cpu>=1.9
 
-# --- ui ---
-streamlit>=1.36
+# --- api (the React frontend lives in frontend/) ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
 
-# --- proof layer (hashing only in Phase 0 Day 3; contracts land Day 5) ---
+# --- proof layer ---
 eth-hash[pycryptodome]>=0.7
+web3>=7.0
+eth-account>=0.13
 
 # --- dataset acquisition ---
 kagglehub>=0.3

@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/*
+ * A SOC console is looked at for hours in a dark room, so the palette is dark by default with a
+ * restrained accent set. Severity colour is the only saturated thing on screen: if everything is
+ * coloured, nothing reads as urgent.
+ */
+@theme {
+  --color-ink-950: #0a0d14;
+  --color-ink-900: #0f1420;
+  --color-ink-850: #141a28;
+  --color-ink-800: #1a2233;
+  --color-ink-700: #253044;
+  --color-ink-600: #35435c;
+  --color-ink-400: #7b8ba6;
+  --color-ink-300: #a3b1c6;
+  --color-ink-200: #cbd5e3;
+
+  --color-accent: #4d9fff;
+  --color-accent-dim: #2a6fc4;
+
+  --color-tp: #f4525f;
+  --color-bp: #f0a52e;
+  --color-fp: #3fb968;
+  --color-neutral: #6b7a92;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-ink-950);
+  color: var(--color-ink-200);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Hashes, ids and addresses are compared by eye during a demo; they need to be monospaced and
+   they must not reflow mid-comparison. */
+.mono {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-variant-ligatures: none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-ink-900);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-700);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-600);
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgb(77 159 255 / 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgb(77 159 255 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(77 159 255 / 0);
+  }
+}
+.running {
+  animation: pulse-ring 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

@@ -260,6 +260,17 @@ def test_a_model_escalation_is_respected(context):
     assert output.escalation_required
 
 
+def test_structural_checks_are_not_listed_twice(context):
+    """On the deterministic backend the output already is the structural output; re-listing it
+    as LLM-VER-001…007 beside the originals makes the audit panel read as confused."""
+    state = scenarios.true_positive()
+    output = VerifierAgent(DeterministicClient()).run(state, context=context)[0]
+    ids = [c.policy_id for c in output.policy_checks]
+
+    assert len(ids) == len(set(ids)), f"duplicate policy ids: {ids}"
+    assert not any(i.startswith("LLM-VER-") for i in ids)
+
+
 def test_model_reasoning_is_preserved_alongside_the_structural_verdict(context):
     state = scenarios.true_positive()
     output = _model_verifier(_llm_output("accept")).run(state, context=context)[0]
