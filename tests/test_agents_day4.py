@@ -142,14 +142,29 @@ def test_an_off_catalogue_action_is_rejected(context):
     assert _verify(state, context).verdict is VerifierVerdict.REJECT
 
 
-def test_high_confidence_over_unresolved_gaps_is_flagged(context):
+def test_high_confidence_over_substantial_gaps_is_flagged(context):
+    from app.agents.verifier import GAP_TOLERANCE
+
     state = scenarios.true_positive()
     state.correlation = state.correlation.model_copy(
-        update={"missing_information": ["device telemetry unavailable"]}
+        update={"missing_information": [f"gap {i}" for i in range(GAP_TOLERANCE + 2)]}
     )
     verdict = _verify(state, context)
     assert verdict.verdict is not VerifierVerdict.ACCEPT
     assert any("gap" in c.lower() for c in verdict.contradictions)
+
+
+def test_a_few_gaps_are_tolerated(context):
+    """Calibration guard. GUIDE's median incident has one evidence row, so a couple of missing
+    entity types is the dataset speaking, not the chain overreaching. An uncalibrated version of
+    this check rejected 40 of 40 real incidents."""
+    from app.agents.verifier import GAP_TOLERANCE
+
+    state = scenarios.true_positive()
+    state.correlation = state.correlation.model_copy(
+        update={"missing_information": [f"gap {i}" for i in range(GAP_TOLERANCE)]}
+    )
+    assert _verify(state, context).verdict is VerifierVerdict.ACCEPT
 
 
 def test_a_degraded_agent_prevents_a_clean_accept(context):
@@ -179,6 +194,77 @@ def test_verifier_reports_every_check_it_ran(context):
     verdict = _verify(scenarios.true_positive(), context)
     ids = {c.policy_id for c in verdict.policy_checks}
     assert {"VER-001", "VER-002", "VER-003", "VER-004", "VER-005", "VER-006", "VER-007"} <= ids
+
+
+# --- reconciliation: structural checks bound the model, on every backend ----------------------
+
+def _model_verifier(payload: dict):
+    """A verifier agent whose 'model' returns exactly the payload given."""
+    from app.agents.llm import FailingClient
+
+    return VerifierAgent(FailingClient(failures=0, payload=payload))
+
+
+def _llm_output(verdict: str, checks: list[dict] | None = None, contradictions=()) -> dict:
+    return {
+        "verdict": verdict,
+        "contradictions": list(contradictions),
+        "policy_checks": checks
+        or [{"policy_id": "MadeUpPolicy", "passed": True, "detail": "looks fine to me"}],
+        "escalation_required": verdict != "accept",
+        "reasoning": "model reasoning",
+    }
+
+
+def test_structural_checks_run_even_when_a_model_produced_the_output(context):
+    """The defect this fixes: on the live backend the seven VER checks never ran at all."""
+    state = scenarios.true_positive()
+    output = _model_verifier(_llm_output("accept")).run(state, context=context)[0]
+    ids = {c.policy_id for c in output.policy_checks}
+    assert {"VER-001", "VER-002", "VER-003"} <= ids
+
+
+def test_a_model_cannot_accept_a_structurally_broken_chain(context):
+    """The conflict scenario must be rejected no matter how happy the model is with it."""
+    state = scenarios.conflict()
+    output = _model_verifier(_llm_output("accept")).run(state, context=context)[0]
+    assert output.verdict is VerifierVerdict.REJECT
+
+
+def test_a_model_cannot_reject_on_taste_alone(context):
+    """Measured behaviour: the live model rejected 40/40 real incidents citing 'evidence gaps'.
+
+    Without a structural failure to point at, that becomes an escalation — a human still looks,
+    but the rejection rate keeps meaning what it says.
+    """
+    state = scenarios.true_positive()
+    output = _model_verifier(
+        _llm_output("reject", contradictions=["I am uneasy about this"])
+    ).run(state, context=context)[0]
+    assert output.verdict is VerifierVerdict.ESCALATE
+
+
+def test_the_models_own_checks_are_kept_but_marked_as_its_own(context):
+    """Its reasoning stays auditable; it just cannot masquerade as a system policy id."""
+    state = scenarios.true_positive()
+    output = _model_verifier(_llm_output("accept")).run(state, context=context)[0]
+    ids = {c.policy_id for c in output.policy_checks}
+    assert "LLM-MadeUpPolicy" in ids
+    assert "MadeUpPolicy" not in ids
+
+
+def test_a_model_escalation_is_respected(context):
+    state = scenarios.true_positive()
+    output = _model_verifier(_llm_output("escalate")).run(state, context=context)[0]
+    assert output.verdict is VerifierVerdict.ESCALATE
+    assert output.escalation_required
+
+
+def test_model_reasoning_is_preserved_alongside_the_structural_verdict(context):
+    state = scenarios.true_positive()
+    output = _model_verifier(_llm_output("accept")).run(state, context=context)[0]
+    assert "model reasoning" in output.reasoning
+    assert "structural checks passed" in output.reasoning
 
 
 # --- remediation -------------------------------------------------------------------------------

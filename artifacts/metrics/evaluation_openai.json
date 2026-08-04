@@ -1,0 +1,134 @@
+{
+  "agents": {
+    "accuracy": 0.525,
+    "confusion": {
+      "BenignPositive": {
+        "BenignPositive": 17,
+        "FalsePositive": 7,
+        "TruePositive": 3
+      },
+      "FalsePositive": {
+        "BenignPositive": 2,
+        "FalsePositive": 2,
+        "TruePositive": 0
+      },
+      "TruePositive": {
+        "BenignPositive": 6,
+        "FalsePositive": 1,
+        "TruePositive": 2
+      }
+    },
+    "macro_f1": 0.4084,
+    "per_class": {
+      "BenignPositive": {
+        "f1": 0.6538,
+        "precision": 0.68,
+        "recall": 0.6296,
+        "support": 27
+      },
+      "FalsePositive": {
+        "f1": 0.2857,
+        "precision": 0.2,
+        "recall": 0.5,
+        "support": 4
+      },
+      "TruePositive": {
+        "f1": 0.2857,
+        "precision": 0.4,
+        "recall": 0.2222,
+        "support": 9
+      }
+    }
+  },
+  "backend": "cache",
+  "baseline": {
+    "accuracy": 0.575,
+    "confusion": {
+      "BenignPositive": {
+        "BenignPositive": 18,
+        "FalsePositive": 5,
+        "TruePositive": 4
+      },
+      "FalsePositive": {
+        "BenignPositive": 2,
+        "FalsePositive": 2,
+        "TruePositive": 0
+      },
+      "TruePositive": {
+        "BenignPositive": 5,
+        "FalsePositive": 1,
+        "TruePositive": 3
+      }
+    },
+    "macro_f1": 0.4669,
+    "per_class": {
+      "BenignPositive": {
+        "f1": 0.6923,
+        "precision": 0.72,
+        "recall": 0.6667,
+        "support": 27
+      },
+      "FalsePositive": {
+        "f1": 0.3333,
+        "precision": 0.25,
+        "recall": 0.5,
+        "support": 4
+      },
+      "TruePositive": {
+        "f1": 0.375,
+        "precision": 0.4286,
+        "recall": 0.3333,
+        "support": 9
+      }
+    }
+  },
+  "gate": {
+    "auto_approval_rate": 0.0,
+    "auto_approved": 0,
+    "requires_approval": 40
+  },
+  "incidents": 40,
+  "latency_ms": {
+    "correlation": {
+      "max": 50,
+      "mean": 15.3
+    },
+    "detection": {
+      "max": 802,
+      "mean": 28.4
+    },
+    "investigation": {
+      "max": 110,
+      "mean": 15.5
+    },
+    "remediation": {
+      "max": 39,
+      "mean": 7.2
+    },
+    "triage": {
+      "max": 54,
+      "mean": 15.8
+    },
+    "verifier": {
+      "max": 56,
+      "mean": 13.2
+    }
+  },
+  "model": "gpt-4o-mini",
+  "reliability": {
+    "baseline_disagreement_rate": 0.275,
+    "degraded_rate": 0.0,
+    "degraded_runs": 0,
+    "incidents_with_cluster_collapse": 7
+  },
+  "split": "val",
+  "verifier": {
+    "escalation_rate": 0.975,
+    "rejection_rate": 0.025,
+    "verdicts": {
+      "escalate": 39,
+      "reject": 1
+    }
+  },
+  "wall_seconds": 12.31
+}

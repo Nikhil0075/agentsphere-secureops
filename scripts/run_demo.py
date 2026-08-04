@@ -21,6 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.agents.llm import build_client  # noqa: E402
+from app.blockchain.client import ChainClient  # noqa: E402
 from app.config import ARTIFACTS, METRICS_DIR, ensure_dirs  # noqa: E402
 from app.data import incidents as incidents_mod  # noqa: E402
 from app.data import loader  # noqa: E402
@@ -29,7 +30,7 @@ from app.observability.logging import persist_agent_run  # noqa: E402
 from app.orchestration.workflow import Workflow, WorkflowResult  # noqa: E402
 from app.retrieval import hybrid  # noqa: E402
 from app.retrieval.base import EntityOverlapRetriever  # noqa: E402
-from app.services import scoring  # noqa: E402
+from app.services import decisions, scoring  # noqa: E402
 
 RUN_METRICS = METRICS_DIR / "workflow_runs.json"
 INDEX_DIR = ARTIFACTS / "index"
@@ -122,6 +123,68 @@ def print_result(result: WorkflowResult) -> None:
         print(f"\ndegraded: {', '.join(result.degraded_agents())}")
 
 
+def print_anchor(conn, persisted, result, approver: str | None) -> None:
+    """Anchor the decision, optionally record an approval, and try to finalise.
+
+    The finalise attempt is the point: on a high-risk decision with no approval the contract
+    reverts, and that revert is the control being demonstrated.
+    """
+    client = ChainClient.connect()
+    print("\n--- chain ---")
+    status = client.status()
+    if not client.available:
+        print(f"  chain unavailable: {status['reason']}")
+        print("  (the workflow completed regardless; the proof panel degrades, nothing else)")
+        return
+
+    print(f"  network      {status['network']} (chainId {status['chain_id']})")
+    print(f"  DecisionProof {status['decision_proof_address']}")
+
+    anchor = decisions.anchor_decision(conn, persisted.decision_id, result, client)
+    if not anchor.anchored:
+        print(f"  submit FAILED: {anchor.reason}")
+        return
+
+    print(f"  submitted    decision #{anchor.decision_id} in block {anchor.block_number}")
+    print(f"  tx           {anchor.tx_hash}")
+    print(f"  gas used     {anchor.gas_used:,}")
+    print(f"  agent        {anchor.agent_address}")
+    if anchor.explorer_url:
+        print(f"  explorer     {anchor.explorer_url}")
+
+    onchain = client.get_decision(anchor.decision_id)
+    print(f"  on-chain     {onchain['label']} / {onchain['risk']} risk / {onchain['state']}")
+
+    verified = client.verify(
+        anchor.decision_id, result.state.evidence_hash, result.state.output_hash
+    )
+    print(f"  verify()     {'VALID' if verified else 'MISMATCH'}")
+
+    if approver:
+        approval_hash = decisions.comment_hash_for(persisted.decision_id, conn)
+        decisions.record_approval(
+            conn, persisted.decision_id, approver, True, "approved from run_demo"
+        )
+        approval = client.approve_decision(
+            anchor.decision_id, True, decisions.comment_hash_for(persisted.decision_id, conn)
+        )
+        if approval.anchored:
+            print(f"  approved by  {approver} (tx {approval.tx_hash[:18]}...)")
+        else:
+            print(f"  approval FAILED: {approval.reason}")
+
+    final = client.finalize_decision(anchor.decision_id)
+    if final.anchored:
+        print(f"  finalised    block {final.block_number}")
+    else:
+        # Expected on a high-risk decision with no approval. This is the exit criterion.
+        reason = final.reason
+        blocked = "ApprovalRequired" in reason
+        print(f"  finalise     {'BLOCKED - human approval required' if blocked else reason[:120]}")
+        if blocked:
+            print("               the contract refused; not the application layer")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--incident", help="incident id; defaults to the first showcase case")
@@ -130,7 +193,17 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=0, help="cap on --all-showcase")
     parser.add_argument("--no-persist", action="store_true", help="skip writing to SQLite")
     parser.add_argument("--quiet", action="store_true", help="summary only")
+    parser.add_argument(
+        "--anchor", action="store_true", help="write the decision proof on chain"
+    )
+    parser.add_argument(
+        "--approve",
+        metavar="ANALYST",
+        help="record a human approval and finalise (implies --anchor)",
+    )
     args = parser.parse_args()
+    if args.approve:
+        args.anchor = True
 
     ensure_dirs()
     evidence, incidents = loader.load_prepared()
@@ -212,6 +285,12 @@ def main() -> int:
                         if output
                         else "",
                     )
+
+                persisted = decisions.save_decision(conn, result)
+                summaries[-1]["decision_id"] = persisted.decision_id
+
+                if args.anchor:
+                    print_anchor(conn, persisted, result, args.approve)
 
     if len(summaries) > 1:
         correct = sum(1 for s in summaries if s["correct"])

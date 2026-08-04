@@ -2,19 +2,20 @@
   "backend": "deterministic",
   "runs": [
     {
-      "actual": "TruePositive",
-      "alerts": 7,
-      "baseline": "TruePositive",
-      "clusters": 7,
-      "confidence": 0.7305,
+      "actual": "BenignPositive",
+      "alerts": 4,
+      "baseline": "BenignPositive",
+      "clusters": 2,
+      "confidence": 0.5604,
       "correct": true,
+      "decision_id": "DEC-49b898416bb7",
       "degraded": [],
-      "evidence_hash": "0xd58d05a7601a13b9724aaafe2a9b647143a76d4d80aedafeb63ce2b8d2016f43",
-      "incident_id": "INC-002cdb785d37",
+      "evidence_hash": "0x219c3f6e000c976b65aaf0fead82d16edf4b474632652a6980d936b591a19fd2",
+      "incident_id": "INC-00b71d3f2cbc",
       "latency_ms": 0,
-      "output_hash": "0x25fa04a3eddc03c5c6c06f01fe12c5feb83be891e217d313ba6d6d7de3582798",
-      "predicted": "TruePositive",
-      "workflow_id": "WF-cf2e81333635"
+      "output_hash": "0x33163f1db136e1a6f3b421ebd2304ebd72f47fc63b868e19c76a68e8e26a368c",
+      "predicted": "BenignPositive",
+      "workflow_id": "WF-1013d0017190"
     }
   ]
 }

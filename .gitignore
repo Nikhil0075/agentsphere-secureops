@@ -21,3 +21,13 @@ artifacts/llm_cache/*
 *.db-shm
 *.log
 .DS_Store
+
+# Contract toolchain and build output
+contracts/node_modules/
+contracts/cache/
+contracts/artifacts/
+contracts/typechain-types/
+contracts/dist/
+
+# Deployment records contain throwaway agent keys; addresses go in the README instead.
+artifacts/chain/

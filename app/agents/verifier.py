@@ -37,6 +37,11 @@ HIGH_CONFIDENCE = 0.85
 #: Below this, a chain should not be claiming a decisive answer at all.
 LOW_CONFIDENCE = 0.40
 
+#: How many reported evidence gaps are normal rather than disqualifying. GUIDE's median incident
+#: has one evidence row, so "no device entity recorded" is the dataset speaking, not the chain
+#: overreaching. Above this, thinness becomes a genuine concern.
+GAP_TOLERANCE = 3
+
 
 class VerifierAgent(Agent):
     name = "verifier"
@@ -108,9 +113,67 @@ class VerifierAgent(Agent):
             "policy_checks, whether escalation is required, and your reasoning."
         )
 
-    # --- offline path -------------------------------------------------------------------
+    # --- reconciliation: the structural checks always run --------------------------------
+
+    def reconcile(self, output: VerifierOutput, context: dict) -> VerifierOutput:
+        """Bound the model's verdict by the deterministic checks.
+
+        A live model left to its own devices invents policy ids and rejects on taste. Measured on
+        40 GUIDE incidents it rejected 40 of them, citing "evidence gaps" — on a dataset whose
+        median incident carries exactly one evidence row, that is a property of the data, not a
+        fault in the reasoning. A verifier that rejects everything is exactly as useless as one
+        that accepts everything.
+
+        So the structural checks run in code on every backend, and the model's judgement is
+        layered on top under two rules:
+
+        * a hard structural failure is a rejection, whatever the model concluded;
+        * the model may not *reject* without a hard structural failure to point at — it may
+          escalate instead, which routes to a human without corrupting the rejection rate.
+
+        The model's own checks are kept, prefixed ``LLM-``, so its reasoning stays visible and
+        auditable rather than being silently discarded.
+        """
+        structural = self._structural(context)
+
+        model_checks = [
+            PolicyCheck(
+                policy_id=f"LLM-{c.policy_id}"[:64],
+                passed=c.passed,
+                detail=c.detail,
+            )
+            for c in output.policy_checks
+        ]
+
+        if structural.verdict is VerifierVerdict.REJECT:
+            verdict = VerifierVerdict.REJECT
+        elif output.verdict is VerifierVerdict.REJECT:
+            # The model wants to reject but nothing structural supports it. Escalate: a human
+            # looks at it, and the rejection rate keeps meaning what it says.
+            verdict = VerifierVerdict.ESCALATE
+        elif structural.verdict is VerifierVerdict.ESCALATE:
+            verdict = VerifierVerdict.ESCALATE
+        else:
+            verdict = output.verdict
+
+        return VerifierOutput(
+            verdict=verdict,
+            contradictions=(structural.contradictions + list(output.contradictions))[:15],
+            policy_checks=(list(structural.policy_checks) + model_checks)[:20],
+            escalation_required=verdict is not VerifierVerdict.ACCEPT,
+            reasoning=(
+                f"{structural.reasoning} Model assessment: {output.reasoning}"
+                if output.reasoning
+                else structural.reasoning
+            )[:1500],
+        )
+
+    # --- offline path and the structural checks ------------------------------------------
 
     def fallback(self, context: dict) -> VerifierOutput:
+        return self._structural(context)
+
+    def _structural(self, context: dict) -> VerifierOutput:
         """Seven structural checks. Any hard failure is a rejection.
 
         These are deliberately checks an LLM is bad at and a program is good at: set membership,
@@ -184,21 +247,28 @@ class VerifierAgent(Agent):
             hard_failure = True
 
         # 4. High confidence must not rest on acknowledged gaps.
-        overconfident = context["confidence"] >= HIGH_CONFIDENCE and bool(context["missing"])
+        #
+        # Calibrated to the dataset rather than to an ideal. GUIDE's median incident carries one
+        # evidence row, so Correlation legitimately reports missing entity types on almost every
+        # incident. Treating any gap as disqualifying rejects the whole corpus and measures
+        # nothing — that is what an uncalibrated version of this check actually did, on 40 of 40.
+        # A *substantial* number of gaps is still a real signal.
+        gaps = len(context["missing"])
+        overconfident = context["confidence"] >= HIGH_CONFIDENCE and gaps > GAP_TOLERANCE
         checks.append(
             PolicyCheck(
                 policy_id="VER-004",
                 passed=not overconfident,
                 detail=(
-                    f"confidence {context['confidence']:.2f} with "
-                    f"{len(context['missing'])} unresolved evidence gap(s)"
+                    f"confidence {context['confidence']:.2f} with {gaps} unresolved evidence "
+                    f"gap(s), tolerance {GAP_TOLERANCE}"
                 ),
             )
         )
         if overconfident:
             contradictions.append(
-                f"Confidence of {context['confidence']:.2f} is asserted while "
-                f"{len(context['missing'])} evidence gap(s) remain unresolved"
+                f"Confidence of {context['confidence']:.2f} is asserted while {gaps} evidence "
+                "gap(s) remain unresolved"
             )
 
         # 5. A high-risk action on a low-confidence finding is disproportionate.

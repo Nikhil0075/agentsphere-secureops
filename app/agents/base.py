@@ -70,6 +70,19 @@ class Agent(ABC):
         """Rule-based output for the offline backend. Defaults to the fallback."""
         return self.fallback(context).model_dump(mode="json")
 
+    def reconcile(self, output: StrictModel, context: dict) -> StrictModel:
+        """Apply deterministic checks to a model-produced output before it is accepted.
+
+        Default is identity. It exists for agents whose correctness rests on checks that must run
+        *regardless of backend* — the Verifier being the case that matters. Without this hook a
+        structural check written in Python only ever runs on the offline path, which is exactly
+        backwards: the live model is the one that needs constraining.
+
+        Runs before hashing, so the hash covers the reconciled output that the system actually
+        acted on.
+        """
+        return output
+
     # --- execution ----------------------------------------------------------------------
 
     @property
@@ -114,6 +127,8 @@ class Agent(ABC):
             except ValidationError as exc:
                 last_error = f"schema validation failed: {exc.error_count()} error(s)"
                 continue
+
+            output = self.reconcile(output, context)
 
             record = AgentRunRecord(
                 agent=self.name,
