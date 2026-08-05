@@ -117,8 +117,6 @@ def main() -> int:
 
             adjacency[src].add(dst)
             adjacency[dst].add(src)
-            node_types[src[0]] += 1
-            node_types[dst[0]] += 1
             edges_used += 1
 
             if labels.incident_ids:
@@ -192,6 +190,12 @@ def main() -> int:
     )
     values = [d for _, d in degrees] or [0]
 
+    # Distinct nodes per type. Counting endpoint occurrences instead would report 711,022
+    # "devices" against a graph of 16,586 nodes — a number that describes traffic volume while
+    # appearing to describe the graph.
+    for node in adjacency:
+        node_types[node[0]] += 1
+
     declared_nodes = declared.get("node_count")
     declared_edges = declared.get("edge_count")
 
@@ -232,7 +236,20 @@ def main() -> int:
             "scored_fraction": round(scored_edges / edges_used, 4) if edges_used else 0.0,
         },
         "edge_types": dict(edge_types),
+        # Counted over activity edges only, so these are lower than the dataset's declared totals
+        # by exactly the INCIDENT_LINK edges we exclude. Every INCIDENT_LINK edge is labelled
+        # malicious, which is why that class is the one that shifts.
         "threat_labels": dict(threat_labels),
+        "threat_label_reconciliation": {
+            "note": (
+                "activity-only counts; declared totals include INCIDENT_LINK edges, which are "
+                "excluded from traversal and are all labelled malicious"
+            ),
+            "malicious_activity": threat_labels.get("malicious", 0),
+            "plus_incident_link": skipped_link,
+            "plus_unresolved": unresolved,
+            "equals_declared": threat_labels.get("malicious", 0) + skipped_link + unresolved,
+        },
         "node_types": dict(node_types),
         "max_degree": values[0],
         "median_degree": values[len(values) // 2],
