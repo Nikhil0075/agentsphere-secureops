@@ -2,22 +2,22 @@
   "backend": "deterministic",
   "passed": 16,
   "total": 16,
-  "mean_latency_ms": 0.0,
+  "mean_latency_ms": 0.5,
   "cases": [
     {
-      "name": "01 INC-002cdb785d37",
-      "passed": true,
-      "detail": "truth TruePositive    -> TruePositive    @0.73  verifier=accept   approval=yes"
-    },
-    {
-      "name": "02 INC-00b71d3f2cbc",
+      "name": "01 INC-00b71d3f2cbc",
       "passed": true,
       "detail": "truth BenignPositive  -> BenignPositive  @0.56  verifier=accept   approval=yes"
     },
     {
-      "name": "03 INC-011b552f92f1",
+      "name": "02 INC-011b552f92f1",
       "passed": true,
       "detail": "truth FalsePositive   -> FalsePositive   @0.70  verifier=accept   approval=yes"
+    },
+    {
+      "name": "03 INC-002cdb785d37",
+      "passed": true,
+      "detail": "truth TruePositive    -> TruePositive    @0.73  verifier=accept   approval=yes"
     },
     {
       "name": "04 INC-016c5a1b5220",
@@ -25,9 +25,9 @@
       "detail": "truth BenignPositive  -> BenignPositive  @0.71  verifier=accept   approval=yes"
     },
     {
-      "name": "05 INC-0199ddc3503d",
+      "name": "05 INC-031dcc239493",
       "passed": true,
-      "detail": "truth BenignPositive  -> TruePositive    @0.47  verifier=accept   approval=yes"
+      "detail": "truth FalsePositive   -> FalsePositive   @0.58  verifier=accept   approval=yes"
     },
     {
       "name": "06 INC-019ade45fefa",
@@ -35,14 +35,14 @@
       "detail": "truth TruePositive    -> TruePositive    @0.51  verifier=accept   approval=yes"
     },
     {
-      "name": "07 INC-01b337d461ce",
+      "name": "07 INC-0199ddc3503d",
       "passed": true,
-      "detail": "truth BenignPositive  -> BenignPositive  @0.61  verifier=accept   approval=yes"
+      "detail": "truth BenignPositive  -> TruePositive    @0.47  verifier=accept   approval=yes"
     },
     {
-      "name": "08 INC-01e16944158f",
+      "name": "08 INC-051c410838ee",
       "passed": true,
-      "detail": "truth BenignPositive  -> BenignPositive  @0.62  verifier=accept   approval=yes"
+      "detail": "truth FalsePositive   -> FalsePositive   @0.77  verifier=accept   approval=yes"
     },
     {
       "name": "09 INC-020335f5c65e",
@@ -50,14 +50,14 @@
       "detail": "truth TruePositive    -> TruePositive    @0.73  verifier=accept   approval=yes"
     },
     {
-      "name": "10 INC-02134704b602",
+      "name": "10 INC-01b337d461ce",
       "passed": true,
-      "detail": "truth BenignPositive  -> BenignPositive  @0.73  verifier=accept   approval=yes"
+      "detail": "truth BenignPositive  -> BenignPositive  @0.61  verifier=accept   approval=yes"
     },
     {
       "name": "covers all three labels",
       "passed": true,
-      "detail": "BenignPositive=6, FalsePositive=1, TruePositive=3"
+      "detail": "BenignPositive=4, FalsePositive=3, TruePositive=3"
     },
     {
       "name": "agent failure degrades, does not abort",

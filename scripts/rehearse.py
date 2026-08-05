@@ -73,9 +73,21 @@ def main() -> int:
     retriever = hybrid.load_if_available(INDEX_DIR)
     workflow = Workflow(client=build_client(args.backend), retriever=retriever)
 
-    showcase = (
-        incidents[incidents["is_showcase"]] if "is_showcase" in incidents else incidents.head(30)
+    pool = (
+        incidents[incidents["is_showcase"]] if "is_showcase" in incidents else incidents
     ).sort_values("incident_id")
+
+    # Round-robin across labels so the sweep genuinely covers TP, BP and FP. Taking the first N
+    # by id is an arbitrary slice: on GUIDE it happened to hit all three, on the fixture corpus it
+    # returned eight benign positives and no true positive at all. A coverage check that passes
+    # because of how the ids sorted is not a coverage check.
+    by_label = {label: list(group.index) for label, group in pool.groupby("label")}
+    ordered: list = []
+    while len(ordered) < args.limit and any(by_label.values()):
+        for label in sorted(by_label):
+            if by_label[label] and len(ordered) < args.limit:
+                ordered.append(by_label[label].pop(0))
+    showcase = pool.loc[ordered] if ordered else pool.head(args.limit)
 
     cases: list[Case] = []
     seen_labels: dict[str, int] = {}
@@ -87,7 +99,7 @@ def main() -> int:
     with db.session() as conn:
         conn.executescript(db.SCHEMA_PATH.read_text(encoding="utf-8"))
 
-        for n, (_, row) in enumerate(showcase.head(args.limit).iterrows(), start=1):
+        for n, (_, row) in enumerate(showcase.iterrows(), start=1):
             rows = incidents_mod.evidence_for(evidence, row["incident_id"])
             result = workflow.run(row, rows, baseline_model=model)
             state = result.state
