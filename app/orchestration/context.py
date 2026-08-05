@@ -58,6 +58,25 @@ class IncidentContext:
     def evidence_ids(self) -> list[str]:
         return [str(e) for e in self.evidence["evidence_id"].tolist()]
 
+    def evidence_payloads(self, evidence_ids: list[str] | None = None) -> dict[str, str]:
+        """Canonical payload string per evidence id, for the evidence content digest.
+
+        Uses the same serialiser the database writer uses, so the digest computed here at
+        workflow time and the one recomputed later from stored rows are byte-identical by
+        construction rather than by coincidence.
+        """
+        from app.db.session import canonical_evidence_payload
+
+        if self.evidence is None or not len(self.evidence):
+            return {}
+        wanted = set(evidence_ids) if evidence_ids is not None else None
+        payloads: dict[str, str] = {}
+        for row in self.evidence.to_dict("records"):
+            eid = str(row.get("evidence_id", ""))
+            if wanted is None or eid in wanted:
+                payloads[eid] = canonical_evidence_payload(row)
+        return payloads
+
     def entity_counts(self) -> dict[str, int]:
         out = {}
         for entity_type, column in ENTITY_COLUMNS.items():

@@ -10,6 +10,7 @@ API-only code path, so a demo driven through the browser and one driven through
 from __future__ import annotations
 
 import json
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
@@ -26,6 +27,7 @@ from app.graph.confidence import ConfidenceModel
 from app.observability.logging import persist_agent_run
 from app.policies import queue as incident_queue
 from app.services import decisions as decisions_service
+from app.services import integrity
 
 STATE: AppState | None = None
 
@@ -421,7 +423,11 @@ def anchor(decision_id: str) -> models.ProofInfo:
                    agent_address, evidence_hash, output_hash, onchain_state, anchored_at
                ) VALUES (?,?,?,?,?,?,?,?,?,?, datetime('now'))""",
             (
-                f"PRF-{decision_id[-8:]}-{outcome.block_number or 0}",
+                # A content-derived id collides on retry: a failed anchor has no block number,
+                # so a second attempt would reuse `PRF-<decision>-0` and blow up on the unique
+                # constraint. Retrying after a network failure is the most likely thing anyone
+                # does at a venue, and it must record another attempt rather than 500.
+                f"PRF-{uuid.uuid4().hex[:12]}",
                 decision_id,
                 outcome.chain_id,
                 outcome.contract_address,
@@ -439,18 +445,74 @@ def anchor(decision_id: str) -> models.ProofInfo:
     return _proof_info(decision_id, info, st, reason=outcome.reason)
 
 
-@app.get("/api/decisions/{decision_id}/verify", response_model=models.ProofInfo)
-def verify(decision_id: str) -> models.ProofInfo:
-    """Recompute and compare against what was anchored.
+@app.get("/api/decisions/{decision_id}/verify", response_model=models.IntegrityInfo)
+def verify(decision_id: str) -> models.IntegrityInfo:
+    """Recompute both digests from stored data and compare with the anchored proof.
 
-    ``valid: false`` with a chain available is the tamper signal.
+    Genuinely recomputes — from ``agent_runs.output_json`` and ``evidence.payload_json`` — rather
+    than reading back a stored hash column. ``valid: false`` means the off-chain record changed
+    after anchoring.
     """
     st = get_state()
     with db.session() as conn:
-        info = decisions_service.verify_decision(conn, decision_id, st.chain())
-    if not info.get("found"):
+        report = integrity.check(conn, decision_id, st.chain())
+    if not report.found:
         raise HTTPException(404, f"unknown decision {decision_id}")
-    return _proof_info(decision_id, info, st)
+    return models.IntegrityInfo(**report.as_dict())
+
+
+@app.post("/api/decisions/{decision_id}/tamper", response_model=models.TamperResult)
+def tamper(decision_id: str, request: models.TamperRequest) -> models.TamperResult:
+    """Edit a stored agent output, the way an insider with database access would.
+
+    Touches only the application database. No hash column is updated and nothing on chain is
+    altered, which is the entire point: the operator controls this table and controls nothing
+    about the anchored digest.
+    """
+    st = get_state()
+    with db.session() as conn:
+        row = conn.execute(
+            "SELECT workflow_id FROM decisions WHERE decision_id = ?", (decision_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, f"unknown decision {decision_id}")
+        try:
+            change = integrity.tamper(conn, row[0], request.agent)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        report = integrity.check(conn, decision_id, st.chain())
+
+    return models.TamperResult(
+        decision_id=decision_id,
+        agent=change["agent"],
+        field=change["field"],
+        before=str(change["before"]),
+        after=str(change["after"]),
+        integrity=models.IntegrityInfo(**report.as_dict()),
+    )
+
+
+@app.post("/api/decisions/{decision_id}/restore", response_model=models.TamperResult)
+def restore(decision_id: str) -> models.TamperResult:
+    """Undo every active tamper on this decision so the demo can be run again."""
+    st = get_state()
+    with db.session() as conn:
+        row = conn.execute(
+            "SELECT workflow_id FROM decisions WHERE decision_id = ?", (decision_id,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, f"unknown decision {decision_id}")
+        restored = integrity.restore(conn, row[0])
+        report = integrity.check(conn, decision_id, st.chain())
+
+    return models.TamperResult(
+        decision_id=decision_id,
+        agent="",
+        field=f"restored {restored} tampered output(s)",
+        before="",
+        after="",
+        integrity=models.IntegrityInfo(**report.as_dict()),
+    )
 
 
 def _proof_info(decision_id: str, info: dict, st: AppState, reason: str = "") -> models.ProofInfo:

@@ -187,6 +187,49 @@ class ProofInfo(BaseModel):
     reason: str = ""
 
 
+class IntegrityInfo(BaseModel):
+    """The result of recomputing both digests from stored data.
+
+    ``anchored_*`` is what the chain recorded; ``recomputed_*`` is what the data hashes to *now*.
+    They diverge exactly when the off-chain record has been altered since anchoring.
+    """
+
+    decision_id: str
+    found: bool = False
+    workflow_id: str = ""
+    incident_id: str = ""
+
+    anchored_evidence_hash: str = ""
+    anchored_output_hash: str = ""
+    recomputed_evidence_hash: str = ""
+    recomputed_output_hash: str = ""
+
+    evidence_valid: bool | None = None
+    output_valid: bool | None = None
+    onchain_valid: bool | None = None
+    valid: bool | None = None
+
+    tampered: list[str] = Field(default_factory=list)
+    tamper_active: bool = False
+    chain_available: bool = False
+    tx_hash: str = ""
+    onchain_decision_id: int | None = None
+    detail: str = ""
+
+
+class TamperRequest(BaseModel):
+    agent: str = Field(default="triage", max_length=40)
+
+
+class TamperResult(BaseModel):
+    decision_id: str
+    agent: str
+    field: str
+    before: str
+    after: str
+    integrity: IntegrityInfo
+
+
 class MetricsResponse(BaseModel):
     baseline: dict = Field(default_factory=dict)
     evaluation: dict = Field(default_factory=dict)

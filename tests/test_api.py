@@ -214,10 +214,58 @@ def test_workflow_response_matches_the_frozen_contracts(workflow):
 
 # --- approval and proof ------------------------------------------------------------------------
 
-def test_verify_reports_the_hashes(client, workflow):
+def test_verify_recomputes_the_hashes_from_stored_data(client, workflow):
+    """The recomputed digest must equal what the workflow produced.
+
+    Stronger than checking a stored column echoes back: this asserts the stored agent outputs and
+    evidence rows still hash to the digest the run committed to.
+    """
     body = client.get(f"/api/decisions/{workflow['decision_id']}/verify").json()
     assert body["found"]
-    assert body["evidence_hash"] == workflow["evidence_hash"]
+    assert body["recomputed_evidence_hash"] == workflow["evidence_hash"]
+    assert body["recomputed_output_hash"] == workflow["output_hash"]
+
+
+def test_tamper_then_verify_shows_the_record_as_altered(client, workflow):
+    """The Day 6 demo, over HTTP."""
+    decision_id = workflow["decision_id"]
+    client.post(f"/api/decisions/{decision_id}/restore")
+
+    # Anchor first: with nothing anchored there is no digest to compare against, and verify
+    # correctly reports `valid: null` rather than inventing a verdict. The chain is stubbed
+    # unavailable here, so this records the proof row locally — which is the degraded path.
+    client.post(f"/api/decisions/{decision_id}/anchor")
+
+    before = client.get(f"/api/decisions/{decision_id}/verify").json()
+    assert before["valid"] is True
+
+    tampered = client.post(
+        f"/api/decisions/{decision_id}/tamper", json={"agent": "triage"}
+    ).json()
+    assert tampered["before"] != tampered["after"]
+    assert tampered["integrity"]["valid"] is False
+    assert "agent output" in tampered["integrity"]["tampered"]
+
+    after = client.get(f"/api/decisions/{decision_id}/verify").json()
+    assert after["valid"] is False
+    assert after["recomputed_output_hash"] != after["anchored_output_hash"]
+
+    restored = client.post(f"/api/decisions/{decision_id}/restore").json()
+    assert restored["integrity"]["valid"] is not False
+
+
+def test_tamper_on_an_unknown_decision_is_a_404(client):
+    assert (
+        client.post("/api/decisions/DEC-nope/tamper", json={"agent": "triage"}).status_code
+        == 404
+    )
+
+
+def test_tamper_with_an_unknown_agent_is_a_400(client, workflow):
+    response = client.post(
+        f"/api/decisions/{workflow['decision_id']}/tamper", json={"agent": "nobody"}
+    )
+    assert response.status_code == 400
 
 
 def test_verify_on_an_unknown_decision_is_a_404(client):

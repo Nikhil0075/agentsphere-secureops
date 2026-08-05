@@ -211,7 +211,11 @@ class Workflow:
         bundle = (
             state.correlation.evidence_bundle if state.correlation else state.evidence_ids
         )
-        state.evidence_hash = hash_evidence_bundle(bundle, state.incident_id)
+        # Hash evidence *content*, not just the selection of ids. Pinning ids alone would let an
+        # edit to an evidence row pass verification, and the tamper-evidence claim would be false.
+        state.evidence_hash = hash_evidence_bundle(
+            bundle, state.incident_id, payloads=context.evidence_payloads(bundle)
+        )
         state.output_hash = hash_agent_output(
             "workflow",
             {

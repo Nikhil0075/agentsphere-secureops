@@ -108,12 +108,7 @@ def load_dataset(
                     row.get("timestamp"),
                     row.get("entity_type"),
                     row.get("evidence_role"),
-                    json.dumps(
-                        {k: _scalar(v) for k, v in row.items()},
-                        sort_keys=True,
-                        separators=(",", ":"),
-                        default=str,
-                    ),
+                    canonical_evidence_payload(row),
                 )
                 for row in evidence.to_dict("records")
             ],
@@ -123,6 +118,22 @@ def load_dataset(
             "evidence": conn.execute("SELECT COUNT(*) FROM evidence").fetchone()[0],
         }
     return counts
+
+
+def canonical_evidence_payload(row: dict) -> str:
+    """The canonical string form of one evidence row.
+
+    Written to ``evidence.payload_json`` and hashed into the evidence digest. Both the writer and
+    the integrity check call *this* function rather than each formatting a dict of their own —
+    two independent serialisations that drift by one space would make every proof read as
+    tampered for a reason that has nothing to do with tampering.
+    """
+    return json.dumps(
+        {k: _scalar(v) for k, v in row.items()},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
 
 
 def _scalar(value):

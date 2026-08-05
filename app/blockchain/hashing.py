@@ -75,15 +75,28 @@ def hash_payload(payload: Any) -> str:
     return keccak256(canonical_json(payload))
 
 
-def hash_evidence_bundle(evidence_ids: Iterable[str], incident_id: str = "") -> str:
+def hash_evidence_bundle(
+    evidence_ids: Iterable[str],
+    incident_id: str = "",
+    payloads: dict[str, str] | None = None,
+) -> str:
     """Hash of the evidence an agent actually consumed.
 
     Ids are sorted and de-duplicated, so the same evidence set produces the same hash regardless
     of the order it was assembled in.
+
+    ``payloads`` maps evidence id to its canonical payload string, and when supplied the digest
+    covers evidence **content** as well as the selection of ids. Without it the hash pins only
+    *which* evidence was used, which would let an edit to an evidence row go undetected — and
+    "tamper-evident evidence" would not be a true claim. Callers that have the content should
+    always pass it; the parameter is optional only so a caller holding ids alone can still
+    produce the weaker selection-only digest knowingly.
     """
-    return hash_payload(
-        {"incident_id": incident_id, "evidence_ids": sorted(set(evidence_ids))}
-    )
+    ids = sorted(set(evidence_ids))
+    payload: dict[str, Any] = {"incident_id": incident_id, "evidence_ids": ids}
+    if payloads is not None:
+        payload["content"] = [payloads.get(eid, "") for eid in ids]
+    return hash_payload(payload)
 
 
 def hash_agent_output(agent: str, output: Any) -> str:

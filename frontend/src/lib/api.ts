@@ -204,6 +204,43 @@ export interface ProofInfo {
   reason: string;
 }
 
+/**
+ * The result of recomputing both digests from stored data.
+ *
+ * `anchored_*` is what the chain recorded. `recomputed_*` is what the stored agent outputs and
+ * evidence rows hash to right now. They diverge exactly when the off-chain record was altered
+ * after anchoring.
+ */
+export interface IntegrityInfo {
+  decision_id: string;
+  found: boolean;
+  workflow_id: string;
+  incident_id: string;
+  anchored_evidence_hash: string;
+  anchored_output_hash: string;
+  recomputed_evidence_hash: string;
+  recomputed_output_hash: string;
+  evidence_valid: boolean | null;
+  output_valid: boolean | null;
+  onchain_valid: boolean | null;
+  valid: boolean | null;
+  tampered: string[];
+  tamper_active: boolean;
+  chain_available: boolean;
+  tx_hash: string;
+  onchain_decision_id: number | null;
+  detail: string;
+}
+
+export interface TamperResult {
+  decision_id: string;
+  agent: string;
+  field: string;
+  before: string;
+  after: string;
+  integrity: IntegrityInfo;
+}
+
 export interface MetricsResponse {
   baseline: Record<string, any>;
   evaluation: Record<string, any>;
@@ -284,7 +321,17 @@ export const api = {
   anchor: (decisionId: string) =>
     request<ProofInfo>(`/api/decisions/${decisionId}/anchor`, { method: "POST" }),
 
-  verify: (decisionId: string) => request<ProofInfo>(`/api/decisions/${decisionId}/verify`),
+  verify: (decisionId: string) =>
+    request<IntegrityInfo>(`/api/decisions/${decisionId}/verify`),
+
+  tamper: (decisionId: string, agent = "triage") =>
+    request<TamperResult>(`/api/decisions/${decisionId}/tamper`, {
+      method: "POST",
+      body: JSON.stringify({ agent }),
+    }),
+
+  restore: (decisionId: string) =>
+    request<TamperResult>(`/api/decisions/${decisionId}/restore`, { method: "POST" }),
 
   metrics: () => request<MetricsResponse>("/api/metrics"),
 };

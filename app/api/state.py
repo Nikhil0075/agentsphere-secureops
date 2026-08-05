@@ -38,7 +38,14 @@ class AppState:
 
     @classmethod
     def load(cls) -> "AppState":
+        from app.db import session as db
         from app.services import scoring
+
+        # Apply the schema on every start. It is all CREATE TABLE IF NOT EXISTS, so this is a
+        # no-op on a current database and adds any table introduced since the file was created.
+        # Without it, a database made before `tamper_log` existed fails the first verify with an
+        # OperationalError rather than degrading.
+        db.init_db()
 
         evidence, incidents = loader.load_prepared()
 

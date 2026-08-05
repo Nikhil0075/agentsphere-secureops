@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type ProofInfo, type WorkflowResponse } from "../lib/api";
+import { api, type IntegrityInfo, type ProofInfo, type WorkflowResponse } from "../lib/api";
 import {
   Badge,
   Card,
@@ -30,7 +30,7 @@ export function Workflow({
   backend: string;
 }) {
   const [result, setResult] = useState<WorkflowResponse | null>(null);
-  const [proof, setProof] = useState<ProofInfo | null>(null);
+  const [integrity, setIntegrity] = useState<IntegrityInfo | null>(null);
   const [running, setRunning] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -40,7 +40,7 @@ export function Workflow({
   const run = async () => {
     setRunning(true);
     setError("");
-    setProof(null);
+    setIntegrity(null);
     setResult(null);
     try {
       setResult(await api.runWorkflow(incidentId, backend));
@@ -51,11 +51,28 @@ export function Workflow({
     }
   };
 
+  /** Anchor and approve return chain state; refresh the integrity view alongside them so the
+      panel never shows a verdict from before the last action. */
   const act = async (what: string, fn: () => Promise<ProofInfo>) => {
     setBusy(what);
     setError("");
     try {
-      setProof(await fn());
+      await fn();
+      if (result?.decision_id) setIntegrity(await api.verify(result.decision_id));
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy("");
+    }
+  };
+
+  /** Verify, tamper and restore all answer the same question: does the stored record still hash
+      to what was anchored? */
+  const actIntegrity = async (what: string, fn: () => Promise<IntegrityInfo>) => {
+    setBusy(what);
+    setError("");
+    try {
+      setIntegrity(await fn());
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -339,7 +356,7 @@ export function Workflow({
                 </button>
                 <button
                   disabled={!!busy}
-                  onClick={() => act("verify", () => api.verify(result.decision_id))}
+                  onClick={() => actIntegrity("verify", () => api.verify(result.decision_id))}
                   className="rounded border border-ink-600 px-3 py-1.5 text-xs font-medium text-ink-200 hover:bg-ink-800 disabled:opacity-40"
                 >
                   {busy === "verify" ? "Verifying…" : "Verify"}
@@ -353,71 +370,129 @@ export function Workflow({
       {result && (
         <Card
           title="Decision integrity"
-          subtitle="keccak256 over canonical JSON: sorted keys, no whitespace. The same inputs always produce the same digest."
+          subtitle="Digests are recomputed from the stored agent outputs and evidence rows, then compared with what was anchored. Nothing here reads back a saved hash column."
           right={
-            proof?.valid === true ? (
+            integrity?.valid === true ? (
               <Badge tone="low">VALID</Badge>
-            ) : proof?.valid === false ? (
+            ) : integrity?.valid === false ? (
               <Badge tone="high">TAMPERED</Badge>
             ) : null
           }
         >
-          <dl className="space-y-1.5 text-xs">
-            <div className="flex gap-3">
-              <dt className="w-28 text-ink-400">Evidence hash</dt>
-              <dd><Hash value={result.evidence_hash} chars={40} /></dd>
-            </div>
-            <div className="flex gap-3">
-              <dt className="w-28 text-ink-400">Output hash</dt>
-              <dd><Hash value={result.output_hash} chars={40} /></dd>
-            </div>
-            {result.decision_id && (
-              <div className="flex gap-3">
-                <dt className="w-28 text-ink-400">Decision</dt>
-                <dd className="mono text-ink-300">{result.decision_id}</dd>
-              </div>
-            )}
-          </dl>
+          {/* Recomputed beside anchored. When they differ the two rows disagree on screen, which
+              is the whole point — a single "invalid" badge asks the audience to take it on faith. */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-ink-400">
+                <tr>
+                  <th className="pb-1 text-left font-medium"></th>
+                  <th className="pb-1 text-left font-medium">Anchored on chain</th>
+                  <th className="pb-1 text-left font-medium">Recomputed from stored data</th>
+                </tr>
+              </thead>
+              <tbody className="align-top">
+                <tr>
+                  <td className="pr-3 text-ink-400">Evidence</td>
+                  <td className="pr-3">
+                    <Hash value={integrity?.anchored_evidence_hash || result.evidence_hash} chars={22} />
+                  </td>
+                  <td className={integrity?.evidence_valid === false ? "text-tp" : ""}>
+                    <Hash value={integrity?.recomputed_evidence_hash || result.evidence_hash} chars={22} />
+                  </td>
+                </tr>
+                <tr>
+                  <td className="pr-3 text-ink-400">Agent output</td>
+                  <td className="pr-3">
+                    <Hash value={integrity?.anchored_output_hash || result.output_hash} chars={22} />
+                  </td>
+                  <td className={integrity?.output_valid === false ? "text-tp" : ""}>
+                    <Hash value={integrity?.recomputed_output_hash || result.output_hash} chars={22} />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
-          {proof && (
+          {integrity?.valid === false && (
+            <p className="mt-3 rounded border border-tp/40 bg-tp/10 px-3 py-2 text-xs text-tp">
+              The stored {integrity.tampered.join(" and ")} no longer hashes to the anchored proof.
+              Nothing on chain was touched — the record was altered underneath it, and that is
+              detectable precisely because the operator of this database does not control the
+              digest.
+            </p>
+          )}
+
+          {/* Scene 5 of the demo arc. Editing the database is the attack; the point is that it
+              cannot be done quietly. */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink-800 pt-3">
+            <span className="text-xs text-ink-400">Tamper demo:</span>
+            <button
+              disabled={!!busy || !result.decision_id}
+              onClick={() =>
+                actIntegrity("tamper", async () => (await api.tamper(result.decision_id, "triage")).integrity)
+              }
+              className="rounded border border-tp/60 px-3 py-1.5 text-xs font-semibold text-tp hover:bg-tp/10 disabled:opacity-40"
+            >
+              {busy === "tamper" ? "Editing…" : "Edit the stored triage label"}
+            </button>
+            <button
+              disabled={!!busy || !result.decision_id}
+              onClick={() =>
+                actIntegrity("restore", async () => (await api.restore(result.decision_id)).integrity)
+              }
+              className="rounded border border-ink-600 px-3 py-1.5 text-xs font-medium text-ink-200 hover:bg-ink-800 disabled:opacity-40"
+            >
+              {busy === "restore" ? "Restoring…" : "Restore"}
+            </button>
+            {integrity?.tamper_active && (
+              <Badge tone="high">record altered</Badge>
+            )}
+          </div>
+
+          {integrity && (
             <div className="mt-3 border-t border-ink-800 pt-3">
-              {!proof.chain_available ? (
+              {!integrity.chain_available ? (
                 <p className="text-xs text-bp">
-                  No chain reachable — {proof.reason || "the proof panel degrades, nothing else"}.
-                  The workflow, the gate and the hashes are unaffected.
+                  No chain reachable — comparing against the locally recorded proof instead.
+                  The workflow, the gate and the digests are unaffected; only the independent
+                  confirmation is missing.
                 </p>
               ) : (
                 <dl className="space-y-1.5 text-xs">
                   <div className="flex gap-3">
-                    <dt className="w-28 text-ink-400">Transaction</dt>
+                    <dt className="w-32 text-ink-400">Transaction</dt>
                     <dd>
-                      {proof.explorer_url ? (
+                      {integrity.tx_hash ? (
                         <a
-                          href={proof.explorer_url}
+                          href={`https://sepolia.etherscan.io/tx/${integrity.tx_hash}`}
                           target="_blank"
                           rel="noreferrer"
                           className="mono text-accent hover:underline"
                         >
-                          {proof.tx_hash.slice(0, 24)}…
+                          {integrity.tx_hash.slice(0, 24)}…
                         </a>
                       ) : (
-                        <Hash value={proof.tx_hash} chars={24} />
+                        <span className="text-ink-500">not anchored</span>
                       )}
                     </dd>
                   </div>
                   <div className="flex gap-3">
-                    <dt className="w-28 text-ink-400">On-chain</dt>
-                    <dd className="text-ink-300">
-                      #{proof.onchain_decision_id ?? "—"} · {proof.onchain_state || "unknown"}
-                      {proof.block_number ? ` · block ${proof.block_number}` : ""}
-                    </dd>
+                    <dt className="w-32 text-ink-400">On-chain decision</dt>
+                    <dd className="text-ink-300">#{integrity.onchain_decision_id ?? "—"}</dd>
                   </div>
                   <div className="flex gap-3">
-                    <dt className="w-28 text-ink-400">Contract</dt>
-                    <dd><Hash value={proof.contract_address} chars={24} /></dd>
+                    <dt className="w-32 text-ink-400">Contract says</dt>
+                    <dd className={integrity.onchain_valid === false ? "text-tp" : "text-ink-300"}>
+                      {integrity.onchain_valid === null
+                        ? "—"
+                        : integrity.onchain_valid
+                          ? "digests match"
+                          : "digests DO NOT match"}
+                    </dd>
                   </div>
                 </dl>
               )}
+              <p className="mt-2 text-xs text-ink-500">{integrity.detail}</p>
             </div>
           )}
         </Card>

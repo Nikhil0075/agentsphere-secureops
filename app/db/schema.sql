@@ -120,3 +120,20 @@ CREATE TABLE IF NOT EXISTS blockchain_proofs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_proofs_decision ON blockchain_proofs(decision_id);
+
+-- Records what the demo tamper button changed, so it can be undone and the demo re-run.
+--
+-- This is a rehearsal aid, not a security control. A real insider editing agent_runs would not
+-- helpfully log the original value first; the integrity check does not consult this table when
+-- deciding whether a record is valid, and must never be changed to do so.
+CREATE TABLE IF NOT EXISTS tamper_log (
+    tamper_id      TEXT PRIMARY KEY,
+    run_id         TEXT NOT NULL,
+    field          TEXT,
+    original_json  TEXT NOT NULL,
+    tampered_json  TEXT NOT NULL,
+    active         INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_tamper_run ON tamper_log(run_id, active);
