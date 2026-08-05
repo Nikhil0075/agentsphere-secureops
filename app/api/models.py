@@ -34,6 +34,7 @@ class DatasetInfo(BaseModel):
     index_available: bool = False
     llm_backend: str = ""
     chain: dict = Field(default_factory=dict)
+    witfoo: dict = Field(default_factory=dict)
 
 
 class IncidentSummary(BaseModel):
@@ -230,9 +231,66 @@ class TamperResult(BaseModel):
     integrity: IntegrityInfo
 
 
+class WitFooIncident(BaseModel):
+    """A WitFoo incident.
+
+    ``threat_labels`` counts benign/suspicious/malicious edges. Those are *threat assessments*,
+    not the analyst triage verdicts GUIDE carries, and the field is named to keep that visible.
+    """
+
+    incident_id: str
+    mo_name: str = ""
+    disposition: str = ""
+    disposition_category: str = ""
+    status_name: str = ""
+    lifecycle_stage: str = ""
+    suspicion_score: float = 0.0
+    attack_techniques: list[str] = Field(default_factory=list)
+    attack_tactics: list[str] = Field(default_factory=list)
+    matched_rules: list[str] = Field(default_factory=list)
+    products_observed: list[str] = Field(default_factory=list)
+    edge_count: int = 0
+    node_count: int = 0
+    threat_labels: dict[str, int] = Field(default_factory=dict)
+    first_observed_at: int | None = None
+    last_observed_at: int | None = None
+    report_text: str = ""
+
+
+class ProvenanceEdge(BaseModel):
+    source: str
+    target: str
+    type: str = ""
+    threat_label: str = ""
+    confidence: float = 0.0
+    scored: bool = False
+    attack_techniques: list[str] = Field(default_factory=list)
+
+
+class ProvenanceGraph(BaseModel):
+    """One incident's provenance subgraph, as shipped by the dataset rather than constructed."""
+
+    incident: WitFooIncident
+    nodes: list[str] = Field(default_factory=list)
+    edges: list[ProvenanceEdge] = Field(default_factory=list)
+    blast_radius: BlastRadiusInfo | None = None
+    attack_path: AttackPathInfo | None = None
+    #: How many confidence *lookups* during traversal came from the dataset rather than a fallback
+    #: prior. Lookups, not edges — Dijkstra queries an edge more than once while relaxing.
+    confidence_sources: dict = Field(default_factory=dict)
+    node_count: int = 0
+    #: Distinct entity pairs. Lower than ``incident.edge_count``, which counts raw edge records:
+    #: WitFoo observes the same pair repeatedly over time, and the traversal graph is simple, so
+    #: 24 observations between 4 entities collapse to 3 connections. Both are reported because
+    #: they answer different questions — how much was observed, and how much is connected.
+    edge_count: int = 0
+    edge_records: int = 0
+
+
 class MetricsResponse(BaseModel):
     baseline: dict = Field(default_factory=dict)
     evaluation: dict = Field(default_factory=dict)
     graph: dict = Field(default_factory=dict)
     index: dict = Field(default_factory=dict)
     proofs: dict = Field(default_factory=dict)
+    witfoo: dict = Field(default_factory=dict)

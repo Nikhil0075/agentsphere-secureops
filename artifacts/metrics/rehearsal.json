@@ -2,7 +2,7 @@
   "backend": "deterministic",
   "passed": 16,
   "total": 16,
-  "mean_latency_ms": 0.5,
+  "mean_latency_ms": 0.4,
   "cases": [
     {
       "name": "01 INC-00b71d3f2cbc",

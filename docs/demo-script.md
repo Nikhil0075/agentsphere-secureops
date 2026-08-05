@@ -57,6 +57,28 @@ Point at the baseline stat:
 > the baseline is the *better* classifier. We report that rather than hiding it — what the agent
 > layer adds is explanation and control, not accuracy.
 
+## Scene 3b — A real provenance graph (optional, 45s)
+
+Skip this if you are tight on time; it is a depth answer, not a story beat. Worth showing to a
+judge who asks how the graph work generalises.
+
+**Show:** the Provenance tab, click the top incident.
+
+> Everything so far ran on Microsoft GUIDE, which is tabular — we *build* the entity graph from
+> evidence rows. This is WitFoo Precinct6, which ships one: 35,133 nodes, 634,190 labelled edges.
+
+Point at the confidence stat.
+
+> The traversal code is the same code — the blast radius and the Dijkstra attack path are
+> unchanged. What differs is where the confidence comes from. On GUIDE those weights are hand-set
+> and we say so. Here they come from the dataset, and this path is 100% grounded in them.
+
+Point at the amber note at the top.
+
+> And these labels are threat assessments, not the analyst triage verdicts GUIDE carries. They are
+> excluded from every accuracy number we report. Different judgements should not be averaged
+> together just because both are called labels.
+
 ## Scene 4 — Human authority (60s)
 
 **Show:** the policy gate card.

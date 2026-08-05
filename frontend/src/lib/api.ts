@@ -19,6 +19,7 @@ export interface DatasetInfo {
   sentinels_masked: string[];
   index_available: boolean;
   llm_backend: string;
+  witfoo: Record<string, any>;
   chain: {
     available: boolean;
     reason?: string;
@@ -241,7 +242,55 @@ export interface TamperResult {
   integrity: IntegrityInfo;
 }
 
+/**
+ * A WitFoo incident. `threat_labels` counts benign/suspicious/malicious edges — threat
+ * assessments, not the analyst triage verdicts GUIDE carries.
+ */
+export interface WitFooIncident {
+  incident_id: string;
+  mo_name: string;
+  disposition: string;
+  disposition_category: string;
+  status_name: string;
+  lifecycle_stage: string;
+  suspicion_score: number;
+  attack_techniques: string[];
+  attack_tactics: string[];
+  matched_rules: string[];
+  products_observed: string[];
+  edge_count: number;
+  node_count: number;
+  threat_labels: Record<string, number>;
+  first_observed_at: number | null;
+  last_observed_at: number | null;
+  report_text: string;
+}
+
+export interface ProvenanceEdge {
+  source: string;
+  target: string;
+  type: string;
+  threat_label: string;
+  confidence: number;
+  scored: boolean;
+  attack_techniques: string[];
+}
+
+export interface ProvenanceGraph {
+  incident: WitFooIncident;
+  nodes: string[];
+  edges: ProvenanceEdge[];
+  blast_radius: GraphInfo["blast_radius"] | null;
+  attack_path: NonNullable<GraphInfo["attack_path"]> | null;
+  confidence_sources: Record<string, number>;
+  node_count: number;
+  /** Distinct connections. Lower than incident.edge_count, which counts raw observations. */
+  edge_count: number;
+  edge_records: number;
+}
+
 export interface MetricsResponse {
+  witfoo: Record<string, any>;
   proofs: Record<string, any>;
   baseline: Record<string, any>;
   evaluation: Record<string, any>;
@@ -333,6 +382,12 @@ export const api = {
 
   restore: (decisionId: string) =>
     request<TamperResult>(`/api/decisions/${decisionId}/restore`, { method: "POST" }),
+
+  witfooIncidents: (params: { limit?: number; offset?: number; search?: string } = {}) =>
+    request<WitFooIncident[]>(`/api/witfoo/incidents${qs(params)}`),
+
+  witfooGraph: (incidentId: string) =>
+    request<ProvenanceGraph>(`/api/witfoo/incidents/${incidentId}/graph`),
 
   metrics: () => request<MetricsResponse>("/api/metrics"),
 };

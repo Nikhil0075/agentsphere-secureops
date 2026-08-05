@@ -22,6 +22,7 @@ from app.blockchain.hashing import hash_payload
 from app.config import ARTIFACTS, DATA_PROCESSED, METRICS_DIR, settings
 from app.data.schema import ENTITY_COLUMNS
 from app.db import session as db
+from app.graph import build as graph_build
 from app.graph import traverse
 from app.graph.confidence import ConfidenceModel
 from app.observability.logging import persist_agent_run
@@ -105,6 +106,7 @@ def dataset() -> models.DatasetInfo:
         index_available=st.index_available,
         llm_backend=settings.llm_backend,
         chain=chain,
+        witfoo=st.provenance.summary(),
     )
 
 
@@ -543,6 +545,100 @@ def _proof_info(decision_id: str, info: dict, st: AppState, reason: str = "") ->
     )
 
 
+# --- witfoo provenance -------------------------------------------------------------------------
+#
+# A separate namespace on purpose. WitFoo carries threat assessments, GUIDE carries analyst triage
+# verdicts, and the two must not end up in the same list where a reader could take them for the
+# same thing. Every response here also carries the label note.
+
+@app.get("/api/witfoo/incidents", response_model=list[models.WitFooIncident])
+def witfoo_incidents(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    search: str | None = None,
+    mo_name: str | None = None,
+) -> list[models.WitFooIncident]:
+    """WitFoo incidents, ordered by the dataset's own suspicion score."""
+    store = get_state().provenance
+    if not store.available:
+        return []
+    return [
+        models.WitFooIncident(**row)
+        for row in store.list_incidents(
+            limit=limit, offset=offset, search=search or "", mo_name=mo_name or ""
+        )
+    ]
+
+
+@app.get("/api/witfoo/incidents/{incident_id}/graph", response_model=models.ProvenanceGraph)
+def witfoo_graph(
+    incident_id: str,
+    max_hops: int = Query(3, ge=1, le=5),
+    hub_degree: int = Query(150, ge=10),
+) -> models.ProvenanceGraph:
+    """One incident's provenance subgraph, plus a blast radius and attack path over it.
+
+    The traversal calls are the *same* ones `/api/incidents/{id}/graph` makes. That reuse is the
+    portability claim: the Day 4 graph layer never knew which dataset it was walking.
+    """
+    store = get_state().provenance
+    incident = store.incident(incident_id)
+    if incident is None:
+        raise HTTPException(404, f"unknown WitFoo incident {incident_id}")
+
+    subgraph = store.subgraph(incident_id)
+    if subgraph is None:
+        return models.ProvenanceGraph(incident=models.WitFooIncident(**incident))
+
+    nodes = sorted(subgraph.graph.adjacency)
+    edges = []
+    for (src, dst), labels in subgraph.edge_labels.items():
+        edges.append(
+            models.ProvenanceEdge(
+                source=graph_build.node_label(src),
+                target=graph_build.node_label(dst),
+                threat_label=labels.threat_label,
+                confidence=labels.suspicion_score or labels.label_confidence,
+                scored=labels.scored,
+                attack_techniques=labels.attack_techniques,
+            )
+        )
+
+    model = store.confidence_model(subgraph)
+    seeds = sorted(nodes, key=lambda n: (-subgraph.graph.degree(n), n))[:2]
+    radius = traverse.blast_radius(
+        subgraph.graph, seeds, max_hops=max_hops, hub_degree=hub_degree
+    )
+
+    attack_path = None
+    reached = radius.nodes
+    if seeds and reached:
+        path = traverse.most_probable_path(
+            subgraph.graph, seeds[0], reached[-1], model.confidence, hub_degree=hub_degree
+        )
+        if path:
+            attack_path = models.AttackPathInfo(**path.as_dict())
+
+    payload = radius.as_dict()
+    return models.ProvenanceGraph(
+        incident=models.WitFooIncident(**incident),
+        nodes=[graph_build.node_label(n) for n in nodes],
+        edges=edges,
+        blast_radius=models.BlastRadiusInfo(
+            seeds=payload["seeds"],
+            impacted_by_type=payload["impacted_by_type"],
+            total_nodes=payload["total_nodes"],
+            hubs_blocked=payload["hubs_blocked"],
+            truncated=payload["truncated"],
+        ),
+        attack_path=attack_path,
+        confidence_sources=model.source_breakdown(),
+        node_count=subgraph.graph.node_count,
+        edge_count=subgraph.graph.edge_count,
+        edge_records=subgraph.edges_read,
+    )
+
+
 # --- metrics ---------------------------------------------------------------------------------
 
 @app.get("/api/metrics", response_model=models.MetricsResponse)
@@ -553,6 +649,7 @@ def metrics() -> models.MetricsResponse:
         graph=_read_json(ARTIFACTS / "graph" / "degree_stats.json"),
         index=_read_json(ARTIFACTS / "index" / "index_stats.json"),
         proofs=_proof_stats(),
+        witfoo=get_state().provenance.summary(),
     )
 
 

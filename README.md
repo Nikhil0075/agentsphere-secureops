@@ -65,7 +65,8 @@ below.
 | On-chain anchoring | decision submitted in ~218k gas; `verify()` VALID; high-risk finalisation reverts |
 | Tamper detection | edit a stored output → recomputed digest diverges → Sepolia `verify()` returns false |
 | Rehearsal sweep | **16/16** cases pass (`scripts/rehearse.py`), 9/10 incidents triaged correctly |
-| Tests | **311 Python + 29 Solidity** |
+| WitFoo provenance | 634,190 edges parsed — **reconciles exactly** with the dataset's metadata; 33.8% carry dataset confidence |
+| Tests | **352 Python + 29 Solidity** |
 
 ### Three honesty notes
 
@@ -250,9 +251,32 @@ tests/            data, schema-freeze, policy, graph, traversal, retrieval, work
   ([arXiv:2407.09017](https://arxiv.org/abs/2407.09017)). Carries analyst-derived ground-truth
   triage labels across exactly the three classes this system predicts. Record counts are quoted
   from the dataset card at time of submission, not from press coverage.
+- **WitFoo Precinct6** (Hugging Face, `witfoo/precinct6-cybersecurity`, **Apache-2.0**) — a
+  provenance graph the dataset *ships*, used for graph visualisation, event correlation and the
+  scale narrative. Every figure below is read from the dataset's own metadata files at runtime
+  (`app/data/witfoo.py::load_metadata`), never hard-coded:
+
+  | | Value | Source file |
+  |---|---|---|
+  | Provenance graph | 35,133 nodes / 634,190 edges | `graph/metadata.json` |
+  | Edge threat labels | benign 390,948 · suspicious 44,517 · malicious 198,725 | `graph/metadata.json` |
+  | Signals | 2,100,363 rows, 33 columns | `signals/metadata.json` |
+
+  Earlier planning cited 100M / 114M / 84M records from press coverage and vendor material. **None
+  of those match this repository**, and none are used here.
+
 - **Synthetic fixture** (`app/data/fixture.py`) — schema-faithful generated data used for offline
   development and the no-credentials demo path. Clearly labelled as synthetic wherever it appears;
   no metric reported as a headline number is computed on it.
+
+### A bug in the WitFoo dataset you will hit immediately
+
+The dataset's own YAML declares `graph/nodes.jsonl`, `graph/edges.jsonl` and
+`graph/incidents.jsonl` as `parquet`. They are **JSONL**. `datasets.load_dataset` and the
+Hugging Face datasets-server both fail on all three with *"Parquet magic bytes not found in
+footer"*; only the `signals` config loads. The files themselves are fine, so
+`scripts/download_witfoo.py` fetches them over plain HTTP and parses them as JSONL. This is not a
+workaround for anything on our side — it is a metadata error in the published dataset.
 
 ### Licences
 
@@ -275,6 +299,15 @@ Stated up front rather than defended under questioning:
 - **The agent chain does not improve classification accuracy** over the LightGBM baseline on the
   sample measured — it is worse by 0.06 macro F1. Its contribution is explanation, policy
   enforcement and auditability.
+- **WitFoo labels are not GUIDE labels and are excluded from every accuracy metric.** GUIDE's
+  TruePositive/BenignPositive/FalsePositive are analyst *triage verdicts*; WitFoo's
+  benign/suspicious/malicious are *threat assessments*, and its `disposition` reads `Unprocessed`
+  on most edges. Mapping one onto the other would be a category error, so nothing does —
+  `tests/test_witfoo.py::test_witfoo_never_enters_the_guide_metrics_path` parses the WitFoo
+  modules and fails if a triage label ever appears as a code literal in them.
+- Only **33.8%** of WitFoo edges carry a dataset confidence score; the rest fall back to a
+  hand-set prior, and the API reports the split per attack path rather than implying the whole
+  chain is grounded.
 - Ground-truth labels are analyst-derived and imperfect.
 - GUIDE's median incident carries **one** evidence row, which limits how much correlation and
   graph traversal can demonstrate on a typical case. The showcase set is filtered to incidents

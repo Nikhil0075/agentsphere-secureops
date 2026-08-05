@@ -23,6 +23,7 @@ from app.data import loader
 from app.orchestration.workflow import Workflow
 from app.retrieval import hybrid
 from app.retrieval.base import EntityOverlapRetriever, Retriever
+from app.services import provenance
 
 INDEX_DIR = ARTIFACTS / "index"
 
@@ -34,6 +35,9 @@ class AppState:
     retriever: Retriever
     baseline: object | None = None
     index_available: bool = False
+    #: WitFoo provenance. Empty when the dataset has not been downloaded; the rest of the system
+    #: is unaffected either way.
+    provenance: provenance.ProvenanceStore = field(default_factory=provenance.ProvenanceStore)
     _clients: dict[str, LLMClient] = field(default_factory=dict)
 
     @classmethod
@@ -67,6 +71,7 @@ class AppState:
             evidence=evidence,
             incidents=incidents,
             retriever=retriever,
+            provenance=provenance.load_if_available(),
             baseline=model,
             index_available=index_available,
         )

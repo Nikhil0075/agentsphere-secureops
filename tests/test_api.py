@@ -308,7 +308,7 @@ def test_anchoring_without_a_chain_still_returns_a_result(client, workflow):
 
 def test_metrics_are_served(client):
     body = client.get("/api/metrics").json()
-    assert set(body) == {"baseline", "evaluation", "graph", "index", "proofs"}
+    assert set(body) == {"baseline", "evaluation", "graph", "index", "proofs", "witfoo"}
 
 
 def test_metrics_report_the_proof_validity_rate(client, workflow):

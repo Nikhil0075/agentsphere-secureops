@@ -3,15 +3,17 @@ import { api, type DatasetInfo } from "./lib/api";
 import { Badge } from "./components/primitives";
 import { Incident } from "./pages/Incident";
 import { Metrics } from "./pages/Metrics";
+import { Provenance } from "./pages/Provenance";
 import { Queue } from "./pages/Queue";
 import { Workflow } from "./pages/Workflow";
 
-type Tab = "queue" | "incident" | "workflow" | "metrics";
+type Tab = "queue" | "incident" | "workflow" | "provenance" | "metrics";
 
 const TABS: { id: Tab; label: string; needsIncident: boolean }[] = [
   { id: "queue", label: "Queue", needsIncident: false },
   { id: "incident", label: "Incident", needsIncident: true },
   { id: "workflow", label: "Workflow", needsIncident: true },
+  { id: "provenance", label: "Provenance", needsIncident: false },
   { id: "metrics", label: "Metrics", needsIncident: false },
 ];
 
@@ -114,6 +116,7 @@ export default function App() {
         {tab === "queue" && <Queue selected={selected} onSelect={select} />}
         {tab === "incident" && selected && <Incident incidentId={selected} />}
         {tab === "workflow" && selected && <Workflow incidentId={selected} backend={backend} />}
+        {tab === "provenance" && <Provenance />}
         {tab === "metrics" && <Metrics />}
       </main>
     </div>

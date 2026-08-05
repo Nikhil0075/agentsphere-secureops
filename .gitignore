@@ -35,3 +35,8 @@ artifacts/chain/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+
+# WitFoo Precinct6 raw download (~442 MB) and its reduction. Regenerate with
+# scripts/download_witfoo.py then scripts/build_witfoo_graph.py.
+data/raw/witfoo/
+artifacts/witfoo/

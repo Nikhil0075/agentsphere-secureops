@@ -158,7 +158,56 @@ flowchart LR
     class v1 good
 ```
 
-## 4. What is deliberately not on chain
+## 4. Two graphs, one traversal layer
+
+GUIDE is tabular, so its entity graph has to be **constructed** (§8.4). WitFoo Precinct6 **ships**
+one. Both become the same `EntityGraph`, so the Day 4 traversal code runs on either without
+modification — which is the cross-domain portability claim, demonstrated rather than asserted.
+
+The difference that matters is where edge confidence comes from. On GUIDE it is hand-set and said
+to be hand-set; on WitFoo the dataset supplies it for 33.8% of edges.
+
+```mermaid
+flowchart TB
+    subgraph guide["Microsoft GUIDE — tabular"]
+        g1[("591,340 evidence rows")] --> g2["construct co-occurrence edges<br/>within an alert"]
+        g2 --> g3["96,351 nodes / 26,194 edges"]
+        g4["confidence.py<br/>hand-set weights"]
+    end
+
+    subgraph witfoo["WitFoo Precinct6 — ships a graph"]
+        w1[("634,190 labelled edges")] --> w2["map node types onto the<br/>canonical entity vocabulary"]
+        w2 --> w3["35,133 nodes declared<br/>16,586 on activity edges"]
+        w4["WitFooConfidence<br/>label_confidence + suspicion_score"]
+    end
+
+    shared["app/graph/traverse.py<br/>depth-capped BFS · Dijkstra on −log(confidence) · DFS lineage<br/><b>unchanged for both</b>"]
+
+    g3 --> shared
+    w3 --> shared
+    g4 -.->|"confidence_fn"| shared
+    w4 -.->|"confidence_fn"| shared
+
+    shared --> out["blast radius · most probable attack chain"]
+
+    classDef ships fill:#1a2a32,stroke:#4ad0ff,color:#e6edf3
+    class w1,w3,w4 ships
+```
+
+WitFoo's node total needs its parts shown, or 16,586 looks like data was dropped:
+
+| | Count |
+|---|---|
+| Declared by the dataset | 35,133 |
+| On activity edges — the traversal graph | 16,586 |
+| Only on `INCIDENT_LINK` edges — incident membership, no observed activity | 16,503 |
+| On no edge at all | 2,044 |
+
+`INCIDENT_LINK` edges are excluded from traversal on purpose: they join an incident record to its
+entities, so walking one would let a path hop between unrelated hosts through the incident node
+and report that as an attack chain.
+
+## 5. What is deliberately not on chain
 
 | Stays in SQLite | Goes on chain |
 |---|---|

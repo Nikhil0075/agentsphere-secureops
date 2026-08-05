@@ -78,6 +78,16 @@ def preflight() -> list[Check]:
         )
     )
 
+    witfoo = ARTIFACTS / "witfoo" / "incidents.json"
+    checks.append(
+        Check(
+            "witfoo provenance",
+            witfoo.exists(),
+            "loaded" if witfoo.exists() else "none (the Provenance tab is empty; nothing else changes)",
+            "python scripts/download_witfoo.py && python scripts/build_witfoo_graph.py",
+        )
+    )
+
     deployment = ARTIFACTS / "chain" / "deployment.json"
     checks.append(
         Check(
