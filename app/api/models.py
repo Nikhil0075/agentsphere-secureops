@@ -235,3 +235,4 @@ class MetricsResponse(BaseModel):
     evaluation: dict = Field(default_factory=dict)
     graph: dict = Field(default_factory=dict)
     index: dict = Field(default_factory=dict)
+    proofs: dict = Field(default_factory=dict)

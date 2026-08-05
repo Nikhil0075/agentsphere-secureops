@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from dataclasses import dataclass, field
 
 from app.agents.schemas import AGENT_OUTPUT_MODELS
@@ -311,7 +312,10 @@ def tamper(conn: sqlite3.Connection, workflow_id: str, agent: str = "triage") ->
     conn.execute(
         """INSERT INTO tamper_log (tamper_id, run_id, field, original_json, tampered_json, active)
            VALUES (?,?,?,?,?,1)""",
-        (f"TMP-{run_id[-10:]}", run_id, field_name, original_json, tampered_json),
+        # A content-derived id collides the second time the same run is tampered. Restore
+        # deactivates the previous row rather than deleting it, so rehearsing the demo twice --
+        # which is the entire point of having a restore button -- would hit the unique constraint.
+        (f"TMP-{uuid.uuid4().hex[:12]}", run_id, field_name, original_json, tampered_json),
     )
     conn.execute(
         "UPDATE agent_runs SET output_json = ? WHERE run_id = ?", (tampered_json, run_id)

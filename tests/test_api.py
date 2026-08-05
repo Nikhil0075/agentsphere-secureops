@@ -308,7 +308,37 @@ def test_anchoring_without_a_chain_still_returns_a_result(client, workflow):
 
 def test_metrics_are_served(client):
     body = client.get("/api/metrics").json()
-    assert set(body) == {"baseline", "evaluation", "graph", "index"}
+    assert set(body) == {"baseline", "evaluation", "graph", "index", "proofs"}
+
+
+def test_metrics_report_the_proof_validity_rate(client, workflow):
+    """§13.2: the share of completed cases whose digests still verify.
+
+    Computed by re-verifying every anchored decision, so it reflects the database as it is now
+    rather than a counter incremented at write time.
+    """
+    client.post(f"/api/decisions/{workflow['decision_id']}/anchor")
+    proofs = client.get("/api/metrics").json()["proofs"]
+
+    assert proofs["decisions"] >= 1
+    assert proofs["anchored"] >= 1
+    assert proofs["validity_rate"] is not None
+    assert 0.0 <= proofs["validity_rate"] <= 1.0
+
+
+def test_a_tampered_decision_shows_up_in_the_metrics(client, workflow):
+    decision_id = workflow["decision_id"]
+    client.post(f"/api/decisions/{decision_id}/restore")
+    client.post(f"/api/decisions/{decision_id}/anchor")
+
+    before = client.get("/api/metrics").json()["proofs"]
+    client.post(f"/api/decisions/{decision_id}/tamper", json={"agent": "triage"})
+    after = client.get("/api/metrics").json()["proofs"]
+
+    assert after["tampered"] > before["tampered"]
+    assert after["validity_rate"] < 1.0
+
+    client.post(f"/api/decisions/{decision_id}/restore")
 
 
 def test_openapi_schema_is_generated(client):

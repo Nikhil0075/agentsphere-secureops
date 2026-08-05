@@ -1,0 +1,88 @@
+{
+  "backend": "deterministic",
+  "passed": 16,
+  "total": 16,
+  "mean_latency_ms": 0.0,
+  "cases": [
+    {
+      "name": "01 INC-002cdb785d37",
+      "passed": true,
+      "detail": "truth TruePositive    -> TruePositive    @0.73  verifier=accept   approval=yes"
+    },
+    {
+      "name": "02 INC-00b71d3f2cbc",
+      "passed": true,
+      "detail": "truth BenignPositive  -> BenignPositive  @0.56  verifier=accept   approval=yes"
+    },
+    {
+      "name": "03 INC-011b552f92f1",
+      "passed": true,
+      "detail": "truth FalsePositive   -> FalsePositive   @0.70  verifier=accept   approval=yes"
+    },
+    {
+      "name": "04 INC-016c5a1b5220",
+      "passed": true,
+      "detail": "truth BenignPositive  -> BenignPositive  @0.71  verifier=accept   approval=yes"
+    },
+    {
+      "name": "05 INC-0199ddc3503d",
+      "passed": true,
+      "detail": "truth BenignPositive  -> TruePositive    @0.47  verifier=accept   approval=yes"
+    },
+    {
+      "name": "06 INC-019ade45fefa",
+      "passed": true,
+      "detail": "truth TruePositive    -> TruePositive    @0.51  verifier=accept   approval=yes"
+    },
+    {
+      "name": "07 INC-01b337d461ce",
+      "passed": true,
+      "detail": "truth BenignPositive  -> BenignPositive  @0.61  verifier=accept   approval=yes"
+    },
+    {
+      "name": "08 INC-01e16944158f",
+      "passed": true,
+      "detail": "truth BenignPositive  -> BenignPositive  @0.62  verifier=accept   approval=yes"
+    },
+    {
+      "name": "09 INC-020335f5c65e",
+      "passed": true,
+      "detail": "truth TruePositive    -> TruePositive    @0.73  verifier=accept   approval=yes"
+    },
+    {
+      "name": "10 INC-02134704b602",
+      "passed": true,
+      "detail": "truth BenignPositive  -> BenignPositive  @0.73  verifier=accept   approval=yes"
+    },
+    {
+      "name": "covers all three labels",
+      "passed": true,
+      "detail": "BenignPositive=6, FalsePositive=1, TruePositive=3"
+    },
+    {
+      "name": "agent failure degrades, does not abort",
+      "passed": true,
+      "detail": "6 agents fell back; decision still produced; approval required"
+    },
+    {
+      "name": "verifier rejects the conflict scenario",
+      "passed": true,
+      "detail": "verdict=reject, 3 contradiction(s), gate blocks"
+    },
+    {
+      "name": "low confidence requires a human",
+      "passed": true,
+      "detail": "0.31 confidence -> POL-004, POL-005, POL-001"
+    },
+    {
+      "name": "clean low-risk closure auto-approves",
+      "passed": true,
+      "detail": "a gate that never says yes is not a gate, it is a stop sign"
+    },
+    {
+      "name": "tamper round trip",
+      "passed": true,
+      "detail": "valid -> TAMPERED -> valid"
+    }
+  ]
+}

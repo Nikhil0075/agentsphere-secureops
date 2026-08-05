@@ -552,7 +552,44 @@ def metrics() -> models.MetricsResponse:
         evaluation=_read_json(METRICS_DIR / "evaluation.json"),
         graph=_read_json(ARTIFACTS / "graph" / "degree_stats.json"),
         index=_read_json(ARTIFACTS / "index" / "index_stats.json"),
+        proofs=_proof_stats(),
     )
+
+
+def _proof_stats() -> dict:
+    """§13.2: the share of completed cases carrying digests that still verify.
+
+    Every anchored decision is re-verified by recomputation, so this is a live integrity sweep
+    over the whole database rather than a counter that was incremented at write time. It is slow
+    in proportion to how many decisions exist, which at demo scale is nothing.
+    """
+    st = get_state()
+    client = st.chain()
+    with db.session() as conn:
+        rows = conn.execute(
+            """SELECT d.decision_id FROM decisions d
+               JOIN blockchain_proofs p ON p.decision_id = d.decision_id
+               WHERE p.output_hash IS NOT NULL AND p.output_hash != ''"""
+        ).fetchall()
+        total_decisions = conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
+
+        valid = tampered = 0
+        for (decision_id,) in rows:
+            report = integrity.check(conn, decision_id, client)
+            if report.valid is True:
+                valid += 1
+            elif report.valid is False:
+                tampered += 1
+
+    anchored = len(rows)
+    return {
+        "decisions": total_decisions,
+        "anchored": anchored,
+        "valid": valid,
+        "tampered": tampered,
+        "validity_rate": round(valid / anchored, 4) if anchored else None,
+        "chain_available": client.available,
+    }
 
 
 @app.get("/api/health")

@@ -242,6 +242,7 @@ export interface TamperResult {
 }
 
 export interface MetricsResponse {
+  proofs: Record<string, any>;
   baseline: Record<string, any>;
   evaluation: Record<string, any>;
   graph: Record<string, any>;

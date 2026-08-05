@@ -13,7 +13,7 @@ holding the switch on anything dangerous.
 
 ## Status
 
-Phase 0 build, days 1–5 of 7. See the master plan for the full schedule.
+**Phase 0 complete — feature frozen.** From here: critical bugs and presentation blockers only.
 
 | Day | Scope | State |
 |---|---|---|
@@ -23,7 +23,10 @@ Phase 0 build, days 1–5 of 7. See the master plan for the full schedule.
 | 4 (7 Aug) | BM25 + FAISS + RRF retrieval, BFS/Dijkstra, Remediation and Verifier agents | done |
 | 5 (8 Aug) | Solidity contracts, **deployed to Sepolia**, on-chain approval | done |
 | — | FastAPI backend + React frontend, replacing Streamlit | done |
-| 6–7 (9–10 Aug) | Tamper demo, metrics polish, freeze | not started |
+| 6 (9 Aug) | Real digest recomputation, tamper demo, proof metrics, one-command start | done |
+| 7 (10 Aug) | Rehearsal sweep, diagrams, README | done |
+
+Architecture and flow diagrams: **[docs/architecture.md](docs/architecture.md)**.
 
 ## Deployed contracts (Sepolia, chainId 11155111)
 
@@ -60,7 +63,9 @@ below.
 | Agent chain, live (gpt-4o-mini) | 6/6 agents valid on first attempt, ~22 s end to end |
 | Cache replay | byte-identical output hashes to the live run, zero network |
 | On-chain anchoring | decision submitted in ~218k gas; `verify()` VALID; high-risk finalisation reverts |
-| Tests | **276 Python + 29 Solidity** |
+| Tamper detection | edit a stored output → recomputed digest diverges → Sepolia `verify()` returns false |
+| Rehearsal sweep | **16/16** cases pass (`scripts/rehearse.py`), 9/10 incidents triaged correctly |
+| Tests | **311 Python + 29 Solidity** |
 
 ### Three honesty notes
 
@@ -89,6 +94,17 @@ python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt   # Linux/macOS: .venv/bin/python
 cp .env.example .env
 ```
+
+One command brings everything up, building any missing artifact first:
+
+```bash
+python scripts/start.py --setup
+```
+
+It runs a preflight, names the command that fixes anything missing, then starts the API on 8000
+and the UI on 5173 and stops both together. `--check` runs the preflight and starts nothing.
+Deliberately not docker-compose: the demo runs from a laptop on venue wifi, where a container
+build is one more thing that can fail ten minutes before presenting.
 
 Then, with no dataset download and no API key:
 
@@ -238,16 +254,43 @@ tests/            data, schema-freeze, policy, graph, traversal, retrieval, work
   development and the no-credentials demo path. Clearly labelled as synthetic wherever it appears;
   no metric reported as a headline number is computed on it.
 
+### Licences
+
+| Component | Licence |
+|---|---|
+| This repository | MIT |
+| Microsoft GUIDE | per the Kaggle dataset page; used for research and evaluation, redistributed nowhere — `scripts/download_data.py` fetches it to a local cache |
+| `rank_bm25`, `faiss-cpu`, `scikit-learn`, `LightGBM`, `pandas`, `FastAPI`, `pydantic` | Apache-2.0, MIT or BSD-3-Clause as published |
+| `web3.py`, `eth-hash`, `eth-account` | MIT |
+| Hardhat, ethers v6 | MIT |
+| React, Vite, Tailwind | MIT |
+| MITRE ATT&CK technique ids and names | © The MITRE Corporation, used per the ATT&CK terms of use |
+
+No dataset content is committed to this repository. `data/` holds a README and nothing else.
+
 ## Limitations
 
 Stated up front rather than defended under questioning:
 
+- **The agent chain does not improve classification accuracy** over the LightGBM baseline on the
+  sample measured — it is worse by 0.06 macro F1. Its contribution is explanation, policy
+  enforcement and auditability.
 - Ground-truth labels are analyst-derived and imperfect.
+- GUIDE's median incident carries **one** evidence row, which limits how much correlation and
+  graph traversal can demonstrate on a typical case. The showcase set is filtered to incidents
+  with enough evidence to be worth showing, and that filtering is disclosed wherever its numbers
+  appear.
 - No live SIEM or SOAR integration.
 - All remediation is simulated.
 - On-chain proofs land on a public testnet, not mainnet.
-- Risk-score weights are hand-set and sanity-checked against the validation split. They are not
-  learned, and are not described as learned.
+- Risk-score weights, verifier thresholds and edge-confidence weights are hand-set and
+  sanity-checked. They are not learned, and are not described as learned.
+- The evidence digest covers the evidence rows the Correlation agent bundled. Evidence outside
+  that bundle is not pinned by the proof.
+- No Merkle tree. §8.2 of the plan is explicit that shipping none beats shipping a broken one; a
+  plain bundle hash is sufficient at this scale.
+- Contract source is not Etherscan-verified (needs a free API key); addresses and ABIs are in this
+  README and in `artifacts/chain/`.
 
 ## Prior work
 

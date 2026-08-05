@@ -128,6 +128,35 @@ export function Metrics() {
         )}
       </Card>
 
+      <Card
+        title="Proof integrity"
+        subtitle="Every anchored decision re-verified by recomputing its digests from stored data."
+      >
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat label="Decisions" value={data.proofs?.decisions ?? "—"} />
+          <Stat label="Anchored" value={data.proofs?.anchored ?? "—"} />
+          <Stat
+            label="Still valid"
+            value={
+              data.proofs?.validity_rate === null || data.proofs?.validity_rate === undefined
+                ? "—"
+                : `${(data.proofs.validity_rate * 100).toFixed(0)}%`
+            }
+            tone={data.proofs?.validity_rate === 1 ? "good" : undefined}
+          />
+          <Stat
+            label="Tampered"
+            value={data.proofs?.tampered ?? "—"}
+            tone={data.proofs?.tampered ? "bad" : undefined}
+          />
+        </div>
+        <p className="mt-2 text-[11px] text-ink-600">
+          {data.proofs?.chain_available
+            ? "Verified against the deployed contract, not against a stored hash column."
+            : "No chain reachable — compared against the locally recorded proof only."}
+        </p>
+      </Card>
+
       <Card title="Entity graph" subtitle="Built from GUIDE evidence rows — GUIDE ships no graph.">
         <div className="grid grid-cols-3 gap-2">
           <Stat label="Nodes" value={data.graph?.nodes?.toLocaleString() ?? "—"} />
