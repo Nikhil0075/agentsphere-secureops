@@ -38,6 +38,10 @@ class DetectionAgent(Agent):
             "evidence_block": build_evidence_block(context.evidence, limit=20),
             "evidence_ids": context.evidence_ids,
             "top_entities": context.top_entities(8),
+            # The grounding allowlist, which must cover everything the prompt exposes -- the
+            # evidence block shows entities beyond the top 8, and validating against the summary
+            # alone rejected genuine citations as invented.
+            "known_entities": context.all_entity_values(),
             "entity_counts": context.entity_counts(),
             "suspicion": context.suspicion_profile(),
             "alert_count": int(context.incident_fields.get("alert_count", 0) or 0),

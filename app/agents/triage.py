@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from app.agents.base import Agent
 from app.agents.schemas import TriageLabel, TriageOutput, WorkflowState
+from app.data.summarize import build_evidence_block
 from app.orchestration.context import IncidentContext
 
 MAX_CITED = 12
@@ -43,6 +44,12 @@ class TriageAgent(Agent):
             "incident_id": context.incident_id,
             "summary": context.summary,
             "evidence_bundle": bundle[:50],
+            # Triage is told to cite specific evidence ids. Listing the ids without their contents
+            # asks it to vouch for records it has not read, so it hedged: confidence topped out at
+            # 0.68 live and 0.77 deterministic against POL-004's 0.80 floor, and its own rationale
+            # said the call was "not supported by event-level evidence". Detection has always
+            # received this block; Triage should too.
+            "evidence_block": build_evidence_block(context.evidence, limit=25),
             "severity": state.detection.severity_score if state.detection else 0.5,
             "investigation_summary": (
                 state.investigation.investigation_summary if state.investigation else ""
@@ -61,6 +68,7 @@ class TriageAgent(Agent):
             "baseline_probabilities": baseline.get("probabilities", {}),
             "baseline_model": baseline.get("model_name", ""),
             "suspicion": context.suspicion_profile(),
+            "revision_feedback": str(kwargs.get("revision_feedback", "") or "")[:1200],
         }
 
     def build_prompt(self, context: dict) -> str:
@@ -69,9 +77,17 @@ class TriageAgent(Agent):
             or "unavailable"
         )
         gaps = "; ".join(context["missing"][:5]) or "none reported"
+        revision = (
+            "\n\nIndependent verifier feedback from the first pass:\n"
+            f"{context['revision_feedback']}\n"
+            "Revise the decision only where that feedback is supported by the supplied evidence."
+            if context["revision_feedback"]
+            else ""
+        )
         return (
             f"Incident {context['incident_id']}\n\n"
             f"{context['summary']}\n\n"
+            f"Evidence records:\n{context['evidence_block']}\n\n"
             f"Detection severity: {context['severity']:.2f}\n"
             f"Detector verdict counts: "
             f"{', '.join(f'{k}={v}' for k, v in sorted(context['suspicion'].items())) or 'none'}\n"
@@ -85,6 +101,7 @@ class TriageAgent(Agent):
             f"Evidence ids you may cite: {', '.join(context['evidence_bundle'][:25])}\n\n"
             "Return label, confidence, rationale and supporting_evidence_ids. Every cited id "
             "must appear in the list above."
+            f"{revision}"
         )
 
     # --- offline path -------------------------------------------------------------------

@@ -100,6 +100,23 @@ class IncidentContext:
                 rows.append((entity_type, str(value), int(count)))
         return sorted(rows, key=lambda r: (-r[2], r[0], r[1]))[:limit]
 
+    def all_entity_values(self) -> set[str]:
+        """Every entity value observed anywhere in this incident's evidence.
+
+        This is the grounding allowlist, and it is deliberately wider than ``top_entities``. The
+        prompt shows the model an evidence block as well as the top-N summary, so an entity can be
+        genuinely present in the incident and absent from the top N. Validating against the
+        narrower list rejected real citations as hallucinations -- it failed three of the six demo
+        cases before this existed.
+        """
+        out: set[str] = set()
+        for column in ENTITY_COLUMNS.values():
+            if column not in self.evidence.columns:
+                continue
+            values = self.evidence[column].astype(str).str.strip()
+            out.update(values[values != ""].unique())
+        return out
+
     def mitre_techniques(self) -> list[str]:
         out: set[str] = set()
         for raw in self.evidence.get("mitre_techniques", pd.Series(dtype=str)).dropna():

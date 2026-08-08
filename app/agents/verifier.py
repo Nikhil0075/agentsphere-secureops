@@ -28,6 +28,7 @@ from app.agents.schemas import (
     VerifierVerdict,
     WorkflowState,
 )
+from app.data.summarize import build_evidence_block
 from app.orchestration.context import IncidentContext
 from app.policies import engine
 
@@ -66,11 +67,36 @@ class VerifierAgent(Agent):
         )
         return {
             "incident_id": context.incident_id,
+            "summary": context.summary,
+            # The evidence itself. `build_evidence_block`'s docstring has always said it exists
+            # "so an agent can cite it and the Verifier can check the citation later" -- it was
+            # simply never wired in here. Without it the model is asked to certify citations it
+            # cannot see, and it correctly refuses: measured escalation was 97.5% live against
+            # 5.0% on the deterministic backend, on incidents whose structural checks all passed.
+            #
+            # Scoped to the correlation bundle, not to the first 25 rows of the incident. Showing
+            # 25 arbitrary records against a 12-id bundle reads as an inconsistency, and the model
+            # said so: "the gaps say the chronology contains only 12 evidence IDs, while 25
+            # evidence records are displayed". The verifier should see exactly what was in scope.
+            "evidence_block": build_evidence_block(
+                context.evidence[context.evidence["evidence_id"].isin(bundle)]
+                if bundle
+                else context.evidence,
+                limit=30,
+            ),
             "label": state.triage.label.value if state.triage else "",
             "confidence": state.triage.confidence if state.triage else 0.0,
             "rationale": state.triage.rationale if state.triage else "",
             "cited": list(state.triage.supporting_evidence_ids) if state.triage else [],
             "bundle": list(bundle),
+            "incident_evidence_count": int(len(context.evidence)),
+            # The deterministic Union-Find result. Without it the Verifier could read Correlation
+            # asserting "26 alerts across 18 clusters" and had no way to check the claim, so it
+            # recorded the figure as unsupported — a contradiction manufactured purely by what it
+            # was not shown. The clustering is an algorithm whose output is checkable; show it.
+            "correlation_summary": (
+                context.correlation.as_dict() if context.correlation else {}
+            ),
             "missing": state.correlation.missing_information if state.correlation else [],
             "severity": state.detection.severity_score if state.detection else 0.0,
             "similar_count": (
@@ -93,11 +119,26 @@ class VerifierAgent(Agent):
         unknown = [e for e in context["cited"] if e not in set(context["bundle"])]
         return (
             f"Incident {context['incident_id']} — verify the chain below.\n\n"
+            f"{context['summary']}\n\n"
+            # The label has to match the scope. This block is the *correlation bundle*, not the
+            # incident, so calling it "Evidence available to this incident" under a summary
+            # reading "26 evidence item(s)" invited the exact complaint it drew: 26 claimed, 20
+            # shown. Naming the scope costs nothing and removes the contradiction.
+            f"Evidence in the correlation bundle ({len(context['bundle'])} of "
+            f"{context['incident_evidence_count']} item(s) on this incident) — the Triage "
+            f"citations must come from here:\n{context['evidence_block']}\n\n"
             f"Detection severity: {context['severity']:.2f}\n"
             f"Triage: {context['label']} at {context['confidence']:.2f}\n"
             f"Rationale: {context['rationale'][:800]}\n"
-            f"Evidence cited: {len(context['cited'])} id(s); "
-            f"{len(unknown)} of them are not in the correlation bundle\n"
+            f"Union-Find clustering (deterministic, computed before the chain ran): "
+            f"{context['correlation_summary'].get('alerts', 0)} alert(s) collapsed into "
+            f"{context['correlation_summary'].get('clusters', 0)} cluster(s)\n"
+            f"Correlation bundle ({len(context['bundle'])} id(s)): "
+            f"{', '.join(context['bundle'][:25]) or 'none'}\n"
+            f"Evidence cited by triage ({len(context['cited'])} id(s)): "
+            f"{', '.join(context['cited'][:25]) or 'none'}\n"
+            f"Cited but NOT in the correlation bundle: "
+            f"{', '.join(unknown[:10]) if unknown else 'none'}\n"
             f"Reported evidence gaps: {'; '.join(context['missing'][:6]) or 'none'}\n"
             f"Similar incidents retrieved: {context['similar_count']}; "
             f"MITRE mappings: {context['mitre_count']}\n"

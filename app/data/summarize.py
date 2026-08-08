@@ -22,6 +22,25 @@ MAX_ALERT_TITLES = 4
 _LEAKY_FIELDS = frozenset({"label", "label_int"})
 
 
+def _opaque(value: str) -> bool:
+    """True when a value is a bare surrogate id carrying no meaning to a reader.
+
+    GUIDE anonymises most categorical text into integers: ``alert_title``, ``top_detector`` and
+    ``top_category`` all arrive as numeric surrogates. Rendering those as though they were names
+    produces lines like ``Distinct alert title (1): 1.`` and ``Detector: 1`` — which read as
+    self-contradictions two lines under ``26 alert(s)``, and the Verifier said so, by name, on
+    the flagship demo case. Naming them as ids is the difference between a confusing claim and
+    an honest one.
+    """
+    return value.isdigit()
+
+
+def _label_ids(values: list[str]) -> str:
+    """Render values, marking them as ids when that is all they are."""
+    joined = "; ".join(values)
+    return f"{joined} (opaque numeric id(s), not names)" if all(map(_opaque, values)) else joined
+
+
 def _distinct(series: pd.Series, limit: int) -> list[str]:
     seen: list[str] = []
     for value in series.dropna().astype(str):
@@ -41,9 +60,11 @@ def build_incident_summary(incident: dict | pd.Series, evidence: pd.DataFrame) -
 
     lines: list[str] = []
     lines.append(f"Incident {incident.get('incident_id', '')}")
+    detector = str(incident.get("top_detector") or "unknown")
     lines.append(
         f"Category: {incident.get('top_category') or 'unknown'}. "
-        f"Detector: {incident.get('top_detector') or 'unknown'}."
+        f"Detector: {detector}"
+        + (" (opaque numeric id, not a name)." if _opaque(detector) else ".")
     )
     lines.append(
         f"{incident.get('alert_count', 0)} alert(s), "
@@ -54,7 +75,14 @@ def build_incident_summary(incident: dict | pd.Series, evidence: pd.DataFrame) -
 
     titles = _distinct(evidence["alert_title"], MAX_ALERT_TITLES)
     if titles:
-        lines.append("Alerts: " + "; ".join(titles) + ".")
+        # Two separate hazards here, and only the first was fixed before. Naming the field
+        # "Distinct alert titles" rather than "Alerts" stops it reading as an alert *count* that
+        # contradicts the line above. But GUIDE anonymises the title itself into an integer, so
+        # the line still rendered as "Distinct alert title (1): 1." — a label of 1 with a value
+        # of 1, which the Verifier quoted back as "Alerts: 1" and escalated on. Say what the
+        # value actually is.
+        plural = "title" if len(titles) == 1 else "titles"
+        lines.append(f"Distinct alert {plural} ({len(titles)}): {_label_ids(titles)}.")
 
     highest = incident.get("max_suspicion_level") or "unspecified"
     verdict = incident.get("max_last_verdict") or "unspecified"

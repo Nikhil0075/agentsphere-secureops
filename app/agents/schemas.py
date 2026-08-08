@@ -196,6 +196,8 @@ class AgentRunRecord(BaseModel):
     model: str = ""
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cached: bool = False
+    trace_id: str = ""
     validation_error: str = ""
     output_hash: str = ""
 

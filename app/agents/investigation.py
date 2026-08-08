@@ -12,6 +12,7 @@ answer and make the metrics worthless.
 from __future__ import annotations
 
 from app.agents.base import Agent
+from app.agents.mitre import MITRE_NAMES, technique_name  # noqa: F401 - re-exported
 from app.agents.schemas import (
     InvestigationOutput,
     MitreMapping,
@@ -19,41 +20,6 @@ from app.agents.schemas import (
     WorkflowState,
 )
 from app.orchestration.context import IncidentContext
-
-#: Minimal technique names so the mapping is readable without a network lookup. Unlisted
-#: techniques are still emitted, with the id standing in for the name.
-MITRE_NAMES = {
-    "T1003": "OS Credential Dumping",
-    "T1005": "Data from Local System",
-    "T1016": "System Network Configuration Discovery",
-    "T1021": "Remote Services",
-    "T1027": "Obfuscated Files or Information",
-    "T1033": "System Owner/User Discovery",
-    "T1036": "Masquerading",
-    "T1041": "Exfiltration Over C2 Channel",
-    "T1047": "Windows Management Instrumentation",
-    "T1053": "Scheduled Task/Job",
-    "T1055": "Process Injection",
-    "T1057": "Process Discovery",
-    "T1059": "Command and Scripting Interpreter",
-    "T1078": "Valid Accounts",
-    "T1082": "System Information Discovery",
-    "T1087": "Account Discovery",
-    "T1105": "Ingress Tool Transfer",
-    "T1110": "Brute Force",
-    "T1112": "Modify Registry",
-    "T1204": "User Execution",
-    "T1486": "Data Encrypted for Impact",
-    "T1547": "Boot or Logon Autostart Execution",
-    "T1548": "Abuse Elevation Control Mechanism",
-    "T1562": "Impair Defenses",
-    "T1566": "Phishing",
-}
-
-
-def technique_name(technique_id: str) -> str:
-    base = technique_id.split(".")[0]
-    return MITRE_NAMES.get(technique_id) or MITRE_NAMES.get(base) or technique_id
 
 
 class InvestigationAgent(Agent):

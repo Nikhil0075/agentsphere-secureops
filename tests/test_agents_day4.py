@@ -155,9 +155,13 @@ def test_high_confidence_over_substantial_gaps_is_flagged(context):
 
 
 def test_a_few_gaps_are_tolerated(context):
-    """Calibration guard. GUIDE's median incident has one evidence row, so a couple of missing
-    entity types is the dataset speaking, not the chain overreaching. An uncalibrated version of
-    this check rejected 40 of 40 real incidents."""
+    """Calibration guard. A couple of genuine gaps is the dataset speaking, not the chain
+    overreaching. An uncalibrated version of this check rejected 40 of 40 real incidents.
+
+    This tolerance is only meaningful because Correlation stopped manufacturing gaps — see
+    ``test_absent_entity_types_are_not_reported_as_gaps``. While an absent entity type counted as
+    missing information, the mean incident carried 5.26 gaps against a tolerance of 3, so the
+    check above fired on almost everything and the escalation it caused looked like caution."""
     from app.agents.verifier import GAP_TOLERANCE
 
     state = scenarios.true_positive()
@@ -360,3 +364,156 @@ def test_a_totally_failed_chain_defaults_to_requiring_approval(dataset):
 
     assert result.state.requires_approval
     assert not (result.gate and result.gate.auto_approved)
+
+
+# --- correlation gap reporting ------------------------------------------------------------------
+
+
+def _gaps(entity_counts, *, timeline=(1,), clusters=({"linking_entities": ["account:a"]},)):
+    from app.agents.correlation import CorrelationAgent
+
+    agent = CorrelationAgent.__new__(CorrelationAgent)
+    return agent._missing(
+        {
+            "entity_counts": dict(entity_counts),
+            "timeline": list(timeline),
+            "clusters": [dict(c) for c in clusters],
+        }
+    )
+
+
+def test_absent_entity_types_are_not_reported_as_gaps():
+    """The single largest source of escalation in the chain, and it was self-inflicted.
+
+    Correlation emitted one gap per *absent* entity type, checking all seven against every
+    incident. Measured on the 5,000-incident corpus that is a mean of 5.26 gaps each: 53.2% of
+    incidents carry one entity type or none, and exactly 5 carry all seven. GUIDE is
+    evidence-level, so a row holds only the fields its source product emits — a mailbox alert has
+    no file hash and never will.
+
+    Because ``missing_information`` is rendered into four downstream prompts and the Verifier
+    flags high confidence above GAP_TOLERANCE=3 gaps, a normally-shaped incident arrived at the
+    gate already described as full of holes.
+    """
+    gaps = _gaps({"account": 4, "ip": 2})
+    assert gaps == [], gaps
+    assert not any("no url" in g or "no filehash" in g or "no device" in g for g in gaps)
+
+
+def test_having_nothing_to_pivot_on_is_still_a_gap():
+    """The distinction the old check could not draw: sparse is normal, empty is not."""
+    gaps = _gaps({})
+    assert len(gaps) == 1
+    assert "no entities of any type" in gaps[0]
+
+
+def test_a_single_entity_type_is_reported_as_uncorroborated():
+    gaps = _gaps({"account": 9})
+    assert len(gaps) == 1
+    assert "one type (account)" in gaps[0]
+
+
+def test_real_structural_gaps_survive_and_stay_within_tolerance():
+    from app.agents.verifier import GAP_TOLERANCE
+
+    gaps = _gaps({}, timeline=(), clusters=())
+    assert any("chronology" in g for g in gaps)
+    assert any("did not cluster" in g for g in gaps)
+    # Even the worst case must not trip the Verifier's tolerance on its own.
+    assert len(gaps) <= GAP_TOLERANCE
+
+
+# --- prompt self-consistency ---------------------------------------------------------------------
+# Three renderings that made the chain contradict itself, each measured on the flagship demo case.
+
+
+def test_opaque_numeric_ids_are_named_as_ids():
+    """GUIDE anonymises categorical text into integers.
+
+    Rendered plainly, ``alert_title`` produced "Distinct alert title (1): 1." two lines under
+    "26 alert(s)" — a label of 1 with a value of 1. The Verifier quoted it back as "Alerts: 1",
+    called the incident accounting inconsistent, and escalated. It was reading our formatting,
+    not the data.
+    """
+    import pandas as pd
+
+    from app.data.summarize import build_incident_summary
+
+    summary = build_incident_summary(
+        {"incident_id": "INC-1", "alert_count": 26, "evidence_count": 26, "top_detector": "1"},
+        pd.DataFrame({"alert_title": ["1", "1"]}),
+    )
+    assert "Detector: 1 (opaque numeric id, not a name)." in summary
+    assert "opaque numeric id(s), not names" in summary
+
+
+def test_a_real_name_is_not_labelled_as_an_id():
+    import pandas as pd
+
+    from app.data.summarize import build_incident_summary
+
+    summary = build_incident_summary(
+        {"incident_id": "INC-1", "top_detector": "Defender for Endpoint"},
+        pd.DataFrame({"alert_title": ["Suspicious sign-in"]}),
+    )
+    assert "opaque numeric" not in summary
+
+
+def test_a_capped_chronology_says_that_it_is_capped():
+    """A silent cap is indistinguishable from missing data to whoever reads the prompt."""
+    from app.agents.correlation import CorrelationAgent
+
+    agent = CorrelationAgent.__new__(CorrelationAgent)
+    prompt = agent.build_prompt(
+        {
+            "incident_id": "INC-1",
+            "clusters": [],
+            "timeline": [
+                {"timestamp": f"t{i}", "evidence_id": f"EVD-{i}", "description": "x"}
+                for i in range(26)
+            ],
+            "correlation_summary": {"alerts": 26, "clusters": 18},
+            "entity_counts": {"account": 3},
+        }
+    )
+    assert "14 further dated event(s) not shown here" in prompt
+    assert "display limit, not missing data" in prompt
+
+
+def test_the_verifier_can_check_the_cluster_count_it_is_told_about():
+    """Correlation asserts "N alerts across M clusters"; the Verifier used to have no way to
+    confirm M and recorded it as unsupported — a contradiction created by withholding, not by
+    disagreement. The clustering is deterministic and checkable, so show it."""
+    from app.agents.verifier import VerifierAgent
+
+    agent = VerifierAgent.__new__(VerifierAgent)
+    prompt = agent.build_prompt(
+        {
+            "incident_id": "INC-1",
+            "summary": "s",
+            "evidence_block": "b",
+            "severity": 0.5,
+            "label": "TruePositive",
+            "confidence": 0.9,
+            "rationale": "r",
+            "bundle": ["EVD-1"],
+            "incident_evidence_count": 26,
+            "cited": ["EVD-1"],
+            "missing": [],
+            "correlation_summary": {"alerts": 26, "clusters": 18},
+            "similar_count": 1,
+            "mitre_count": 1,
+            "action": "monitor_and_watchlist",
+            "action_risk": "low",
+            "action_in_catalogue": True,
+            "applicable_labels": ["TruePositive"],
+            "baseline_label": "TruePositive",
+            "baseline_confidence": 0.7,
+            "degraded": [],
+            "degraded_agents": [],
+        }
+    )
+    assert "26 alert(s) collapsed into 18 cluster(s)" in prompt
+    # The evidence block is bundle-scoped; saying so stops "26 claimed, 1 shown" reading as
+    # an inconsistency rather than as a scope.
+    assert "correlation bundle (1 of 26 item(s) on this incident)" in prompt

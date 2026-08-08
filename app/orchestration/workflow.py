@@ -16,7 +16,7 @@ says so.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 import pandas as pd
@@ -54,6 +54,12 @@ class WorkflowResult:
     state: WorkflowState
     context: IncidentContext
     gate: "engine.GateDecision | None" = None
+    #: What each agent was actually asked, one entry per run, keyed by ``run_index``.
+    #:
+    #: Keyed by index rather than by agent name because the live revision pass runs triage,
+    #: remediation and verifier a second time — nine runs, with two entries per revised agent.
+    #: Defaulted so existing constructors keep working.
+    traces: list[dict] = field(default_factory=list)
 
     @property
     def label(self) -> str:
@@ -68,6 +74,26 @@ class WorkflowResult:
 
     def degraded_agents(self) -> list[str]:
         return [run.agent for run in self.state.runs if run.status != "ok"]
+
+    @property
+    def revision_fired(self) -> bool:
+        """Whether the live-only triage correction pass ran, adding three stages to the timeline."""
+        return len(self.state.runs) > len(AGENT_SEQUENCE)
+
+    def resampled_agents(self) -> list[str]:
+        """Agents that succeeded only on a later attempt.
+
+        A retry re-issues a byte-identical prompt, so on a model with any sampling variance a
+        second-attempt success is a *resample*, not a corrected call. It is recorded as ``ok`` and
+        nothing else distinguishes it, which makes it worth naming: two runs of the same incident
+        can diverge here without either being degraded.
+
+        Derived rather than stored -- ``AgentRunRecord`` is frozen into
+        ``artifacts/schemas/workflow_state.schema.json`` and cannot take a new field.
+        """
+        return [
+            run.agent for run in self.state.runs if run.status == "ok" and run.attempts > 1
+        ]
 
     def total_latency_ms(self) -> int:
         return sum(run.latency_ms for run in self.state.runs)
@@ -125,14 +151,64 @@ class Workflow:
     # --- nodes --------------------------------------------------------------------------
 
     def _run_agent(
-        self, name: str, state: WorkflowState, context: IncidentContext
+        self,
+        name: str,
+        state: WorkflowState,
+        context: IncidentContext,
+        traces: list[dict] | None = None,
+        **kwargs,
     ) -> WorkflowState:
         agent = self.agents[name]
-        output, record = agent.run(state, context=context)
+        sink: dict = {} if traces is not None else None  # type: ignore[assignment]
+        output, record = agent.run(state, context=context, trace_sink=sink, **kwargs)
+        # Revision passes follow the original six stages in the audit timeline.
+        record.sequence = len(state.runs) + 1
         setattr(state, name, output)
         state.runs.append(record)
+        if traces is not None and sink:
+            # Stamped after the run so the index matches this record's position in state.runs.
+            sink["run_index"] = len(state.runs) - 1
+            sink["sequence"] = record.sequence
+            sink["status"] = record.status
+            traces.append(sink)
         if record.status != "ok":
             state.errors.append(f"{name}: {record.status} — {record.validation_error}")
+        return state
+
+    def _revise_rejected_live_triage(
+        self, state: WorkflowState, context: IncidentContext, traces: list[dict] | None = None
+    ) -> WorkflowState:
+        """Give a live Sol judge one bounded correction pass after verifier rejection.
+
+        Replay remains byte-for-byte presentation-safe and deterministic mode remains fully
+        offline. The correction loop is therefore live-only, capped at one pass, and the final
+        deterministic policy gate still has the last word.
+
+        The consequence to know before comparing hashes: **a live run that fires this produces
+        nine agent runs and a different ``output_hash`` than its replay, which produces six.**
+        Replay cannot reproduce the revision because the pass is gated on ``backend == "live"``,
+        so the entries it writes to the cache are only ever reachable from another live run. That
+        is a divergence by design, not a replay bug; ``WorkflowResult.revision_fired`` reports it
+        and ``scripts/prewarm_replay.py`` records it per incident in the demo manifest.
+        """
+        if getattr(self.client, "backend", "") != "live" or state.verifier is None:
+            return state
+        if state.verifier.verdict.value == "accept" or not state.verifier.contradictions:
+            return state
+        if any(run.status != "ok" for run in state.runs):
+            return state
+
+        feedback = "; ".join(state.verifier.contradictions[:6])
+        state = self._run_agent(
+            "triage",
+            state,
+            context,
+            traces,
+            revision_feedback=feedback,
+            reasoning_effort="high",
+        )
+        state = self._run_agent("remediation", state, context, traces)
+        state = self._run_agent("verifier", state, context, traces, reasoning_effort="high")
         return state
 
     def _apply_gate(self, state: WorkflowState) -> engine.GateDecision | None:
@@ -202,8 +278,11 @@ class Workflow:
             clusters=state.correlation_clusters,
         )
 
+        traces: list[dict] = []
         for name in AGENT_SEQUENCE:
-            state = self._run_agent(name, state, context)
+            state = self._run_agent(name, state, context, traces)
+
+        state = self._revise_rejected_live_triage(state, context, traces)
 
         gate = self._apply_gate(state)
 
@@ -225,6 +304,8 @@ class Workflow:
             },
         )
 
+        result = WorkflowResult(state=state, context=context, gate=gate, traces=traces)
+
         log_event(
             "workflow_end",
             workflow_id=state.workflow_id,
@@ -233,8 +314,10 @@ class Workflow:
             confidence=state.triage.confidence if state.triage else 0.0,
             verdict=state.verifier.verdict.value if state.verifier else "",
             requires_approval=state.requires_approval,
-            degraded=[r.agent for r in state.runs if r.status != "ok"],
-            latency_ms=sum(r.latency_ms for r in state.runs),
+            degraded=result.degraded_agents(),
+            resampled=result.resampled_agents(),
+            revision_fired=result.revision_fired,
+            latency_ms=result.total_latency_ms(),
         )
 
-        return WorkflowResult(state=state, context=context, gate=gate)
+        return result

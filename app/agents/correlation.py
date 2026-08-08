@@ -17,7 +17,6 @@ from app.agents.schemas import (
     TimelineEvent,
     WorkflowState,
 )
-from app.data.schema import ENTITY_COLUMNS
 from app.orchestration.context import IncidentContext
 
 MAX_BUNDLE = 50
@@ -70,10 +69,19 @@ class CorrelationAgent(Agent):
             f"item(s), linked by {', '.join(c['linking_entities']) or 'time proximity'}"
             for c in context["clusters"]
         ) or "- no clusters formed"
+        # The chronology is capped, and the cap used to be silent. Downstream agents were told
+        # "26 evidence item(s)" and then shown 12 chronology rows, which the Verifier reported as
+        # an accounting inconsistency rather than as a display limit — because from where it sat,
+        # that is exactly what it looked like. Disclose the cap and the mismatch disappears.
+        shown = context["timeline"][:12]
         timeline = "\n".join(
-            f"- {row['timestamp']} [{row['evidence_id']}] {row['description']}"
-            for row in context["timeline"][:12]
+            f"- {row['timestamp']} [{row['evidence_id']}] {row['description']}" for row in shown
         ) or "- no usable timestamps"
+        if len(context["timeline"]) > len(shown):
+            timeline += (
+                f"\n- ... {len(context['timeline']) - len(shown)} further dated event(s) not "
+                "shown here; this is a display limit, not missing data"
+            )
         summary = context["correlation_summary"]
 
         return (
@@ -85,7 +93,12 @@ class CorrelationAgent(Agent):
             f"Entity counts: {context['entity_counts']}\n\n"
             "Produce evidence_bundle (evidence ids only, drawn from the ids shown above), "
             "relationships between entities, a timeline, and missing_information — the specific "
-            "things you would need to reach a firmer conclusion."
+            "things you would need to reach a firmer conclusion.\n\n"
+            "For missing_information, list only gaps that would change your conclusion. An entity "
+            "type that does not appear above is not a gap: each evidence row carries only the "
+            "fields its source product emits, so most incidents legitimately have two or three "
+            "types and no more. Do not list absent entity types. If nothing genuinely limits the "
+            "conclusion, return an empty list."
         )
 
     # --- offline path -------------------------------------------------------------------
@@ -107,16 +120,51 @@ class CorrelationAgent(Agent):
         return out[:20]
 
     def _missing(self, context: dict) -> list[str]:
-        present = set(context["entity_counts"])
-        gaps = [
-            f"no {entity_type} entity recorded on this incident"
-            for entity_type in ENTITY_COLUMNS
-            if entity_type not in present
-        ]
+        """Gaps that would actually change a conclusion — not the shape of the telemetry.
+
+        This used to emit one gap per *absent* entity type, all seven of them checked against
+        every incident. Measured across the 5,000-incident corpus that is a mean of **5.26
+        manufactured gaps each**: only 5 incidents carry all seven types, 53.2% carry one or
+        none. GUIDE is evidence-level and each row holds only the fields its source product
+        emits, so a mailbox alert has no file hash and never will. Reporting that absence as
+        missing information asserts an investigative hole on 99.9% of incidents.
+
+        The cost was not cosmetic. ``missing_information`` is rendered into the Investigation,
+        Triage, Remediation and Verifier prompts, and the field caps at 15 entries — so five-odd
+        fabricated gaps both crowded out the real ones and told four downstream agents, on every
+        incident, that the evidence was incomplete. Agents asked to reason about an incident
+        described as full of holes hedge and escalate, which is precisely what the gate measured.
+
+        What remains are conditions that genuinely limit the conclusion: no entities to pivot on,
+        no chronology, nothing linking the alerts, or a single uncorroborated source.
+        """
+        gaps: list[str] = []
+        counts = context["entity_counts"]
+
+        if not counts:
+            # Distinct from the sparse case: there is nothing to pivot on at all.
+            gaps.append(
+                "no entities of any type were extracted, so this incident cannot be pivoted on "
+                "or linked to any other"
+            )
+        elif len(counts) == 1:
+            only = next(iter(counts))
+            gaps.append(
+                f"every entity on this incident is of one type ({only}); there is no second "
+                "observable to corroborate against"
+            )
+
         if not context["timeline"]:
             gaps.append("no usable timestamps, so no chronology could be built")
         if not context["clusters"]:
             gaps.append("alerts did not cluster; no shared entity linked them")
+        elif len(context["clusters"]) > 1 and not any(
+            c["linking_entities"] for c in context["clusters"]
+        ):
+            gaps.append(
+                "clusters were formed on time proximity alone, with no shared entity joining them"
+            )
+
         return gaps[:15]
 
     def fallback(self, context: dict) -> CorrelationOutput:

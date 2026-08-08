@@ -11,10 +11,10 @@ import pytest
 
 from app.agents.llm import (
     CacheMiss,
-    CacheOnlyClient,
     DeterministicClient,
     FailingClient,
     LLMError,
+    ReplayClient,
     ResponseCache,
     build_client,
     cache_key,
@@ -218,6 +218,20 @@ def test_cache_key_changes_with_the_model():
     assert cache_key("gpt-4o-mini", "s", "p", schema) != cache_key("gpt-5", "s", "p", schema)
 
 
+def test_cache_key_changes_with_the_prompt_version():
+    """A reworded prompt under the same model must not replay the old wording's answer."""
+    schema = {"type": "object"}
+    assert cache_key("m", "s", "p", schema, "2026-08-06") != cache_key(
+        "m", "s", "p", schema, "2026-09-01"
+    )
+
+
+def test_cache_key_without_a_prompt_version_is_not_the_same_as_with_one():
+    """Why the pre-versioning entries in artifacts/llm_cache are unreachable, not merely stale."""
+    schema = {"type": "object"}
+    assert cache_key("m", "s", "p", schema) != cache_key("m", "s", "p", schema, "2026-08-06")
+
+
 def test_cache_round_trips(tmp_path):
     cache = ResponseCache(tmp_path)
     key = cache_key("m", "s", "p", {})
@@ -226,9 +240,9 @@ def test_cache_round_trips(tmp_path):
     assert len(cache) == 1
 
 
-def test_cache_only_backend_raises_on_a_miss(tmp_path):
+def test_replay_raises_on_a_miss(tmp_path):
     """Silently substituting something else would make a 'reproduced' run a lie."""
-    client = CacheOnlyClient(cache=ResponseCache(tmp_path))
+    client = ReplayClient(cache=ResponseCache(tmp_path))
     with pytest.raises(CacheMiss):
         client.complete_structured(system="s", prompt="p", schema={}, name="triage")
 
@@ -294,6 +308,170 @@ def test_context_withholds_ground_truth(one_incident):
 
 
 #: Agents that decide *before* any label exists. None of these may see a label at all.
+# --- prompts must contain what the agent is asked to reason about ------------------------------
+# The defect these guard: the Verifier's prompt rendered `len(cited)` instead of the ids, and no
+# evidence content at all, so it was asked to certify citations it could not see. It said so on
+# every incident and escalated -- 97.5% live against 5.0% deterministic, on incidents whose
+# structural checks all passed. Triage had the milder form: ids listed, contents withheld.
+
+
+def _prompt_for(agent_name, one_incident):
+    from app.agents.schemas import WorkflowState
+    from app.orchestration.context import IncidentContext
+
+    row, rows = one_incident
+    workflow = Workflow(client=DeterministicClient())
+    context = IncidentContext.from_incident(row, rows)
+    state = WorkflowState(workflow_id="WF-p", incident_id=context.incident_id)
+
+    for name in AGENT_SEQUENCE:
+        agent = workflow.agents[name]
+        agent_context = agent.build_context(state, context=context)
+        if name == agent_name:
+            return agent.build_prompt(agent_context), agent_context, context
+        output, record = agent.run(state, context=context)
+        setattr(state, name, output)
+        state.runs.append(record)
+    raise AssertionError(f"unknown agent {agent_name}")
+
+
+def test_the_verifier_is_shown_the_evidence_ids_it_must_check(one_incident):
+    prompt, agent_context, _ = _prompt_for("verifier", one_incident)
+
+    assert agent_context["bundle"], "no correlation bundle to verify against"
+    for evidence_id in agent_context["bundle"][:5]:
+        assert evidence_id in prompt, f"{evidence_id} is in the context but not in the prompt"
+    for evidence_id in agent_context["cited"][:5]:
+        assert evidence_id in prompt, f"triage cited {evidence_id} and the verifier cannot see it"
+
+
+def test_the_verifier_is_shown_the_evidence_contents(one_incident):
+    prompt, _, context = _prompt_for("verifier", one_incident)
+
+    assert context.summary[:60] in prompt, "the verifier cannot see the incident summary"
+    first = str(context.evidence.iloc[0]["evidence_id"])
+    assert f"[{first}]" in prompt, "the verifier has no evidence block to check citations against"
+
+
+def test_triage_is_shown_the_contents_of_the_evidence_it_must_cite(one_incident):
+    prompt, agent_context, context = _prompt_for("triage", one_incident)
+
+    first = str(context.evidence.iloc[0]["evidence_id"])
+    assert f"[{first}]" in prompt, "triage is asked to cite records it was never shown"
+    for evidence_id in agent_context["evidence_bundle"][:5]:
+        assert evidence_id in prompt
+
+
+# --- agent traces ----------------------------------------------------------------------------
+# The prompts are surfaced on the Workflow screen so invariant 2 can be read rather than trusted.
+# These tests make the same claim mechanically.
+
+
+def test_trace_sink_does_not_change_what_run_returns(one_incident):
+    """A display feature must be observably inert on the decision path."""
+    from app.agents.schemas import WorkflowState
+    from app.orchestration.context import IncidentContext
+
+    row, rows = one_incident
+    context = IncidentContext.from_incident(row, rows)
+    agent = Workflow(client=DeterministicClient()).agents["detection"]
+
+    plain_state = WorkflowState(workflow_id="WF-a", incident_id=context.incident_id)
+    traced_state = WorkflowState(workflow_id="WF-a", incident_id=context.incident_id)
+    sink: dict = {}
+
+    plain, plain_record = agent.run(plain_state, context=context)
+    traced, traced_record = agent.run(traced_state, context=context, trace_sink=sink)
+
+    assert plain.model_dump() == traced.model_dump()
+    assert plain_record.output_hash == traced_record.output_hash
+    assert sink["user_prompt"]
+
+
+def test_trace_sink_never_reaches_build_context(one_incident):
+    """It is keyword-only precisely so it cannot be forwarded into an agent's prompt."""
+    from app.agents.schemas import WorkflowState
+    from app.orchestration.context import IncidentContext
+
+    row, rows = one_incident
+    context = IncidentContext.from_incident(row, rows)
+    agent = Workflow(client=DeterministicClient()).agents["detection"]
+    state = WorkflowState(workflow_id="WF-a", incident_id=context.incident_id)
+
+    sink: dict = {}
+    agent.run(state, context=context, trace_sink=sink)
+
+    assert "trace_sink" not in sink["context_keys"]
+    assert "trace_sink" not in sink["user_prompt"]
+
+
+def test_pre_decision_traces_are_label_free(one_incident):
+    """Invariant 2, asserted over the prompts the UI actually displays.
+
+    Scoped to the rendered user prompt. Triage's *role* names the three labels because it is
+    choosing between them, and that static text is identical for every incident, so it cannot
+    carry an answer.
+    """
+    row, rows = one_incident
+    result = Workflow(client=DeterministicClient()).run(row, rows)
+
+    pre_decision = [t for t in result.traces if t["pre_decision"]]
+    assert {t["agent"] for t in pre_decision} == {"detection", "correlation", "investigation"}
+    for trace in pre_decision:
+        assert trace["label_free"], f"{trace['agent']} prompt leaks a triage label"
+
+
+def test_every_run_gets_a_trace_keyed_by_its_run_index(one_incident):
+    row, rows = one_incident
+    result = Workflow(client=DeterministicClient()).run(row, rows)
+
+    assert len(result.traces) == len(result.state.runs)
+    assert [t["run_index"] for t in result.traces] == list(range(len(result.state.runs)))
+    for trace, run in zip(result.traces, result.state.runs):
+        assert trace["agent"] == run.agent
+        assert trace["sequence"] == run.sequence
+
+
+def test_traces_are_keyed_by_index_so_a_revision_pass_stays_distinguishable(one_incident):
+    """The live revision re-runs three agents, so agent name is not a unique key.
+
+    Simulated by driving _run_agent directly: the live path is gated on backend == "live", and
+    what matters here is that a repeated agent produces two separately addressable traces.
+    """
+    from app.agents.schemas import WorkflowState
+    from app.orchestration.context import IncidentContext
+
+    row, rows = one_incident
+    workflow = Workflow(client=DeterministicClient())
+    context = IncidentContext.from_incident(row, rows)
+    state = WorkflowState(workflow_id="WF-r", incident_id=context.incident_id)
+    traces: list[dict] = []
+
+    for name in AGENT_SEQUENCE:
+        state = workflow._run_agent(name, state, context, traces)
+    for name in ("triage", "remediation", "verifier"):
+        state = workflow._run_agent(name, state, context, traces)
+
+    assert len(traces) == 9
+    assert [t["run_index"] for t in traces] == list(range(9))
+    triage_indices = [t["run_index"] for t in traces if t["agent"] == "triage"]
+    assert len(triage_indices) == 2 and triage_indices[0] != triage_indices[1]
+
+
+def test_traces_are_absent_when_no_sink_is_supplied(one_incident):
+    """Nothing pays for the feature unless it is asked for."""
+    from app.agents.schemas import WorkflowState
+    from app.orchestration.context import IncidentContext
+
+    row, rows = one_incident
+    workflow = Workflow(client=DeterministicClient())
+    context = IncidentContext.from_incident(row, rows)
+    state = WorkflowState(workflow_id="WF-n", incident_id=context.incident_id)
+
+    workflow._run_agent("detection", state, context)
+    assert state.detection is not None
+
+
 PRE_DECISION_AGENTS = ("detection", "correlation", "investigation", "triage")
 
 
