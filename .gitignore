@@ -40,3 +40,6 @@ frontend/dist/
 # scripts/download_witfoo.py then scripts/build_witfoo_graph.py.
 data/raw/witfoo/
 artifacts/witfoo/
+
+# TypeScript incremental build cache
+frontend/tsconfig.tsbuildinfo

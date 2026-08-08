@@ -1,7 +1,7 @@
 """Evaluate the full six-agent chain against ground truth.
 
     python scripts/evaluate.py --split val --limit 200
-    python scripts/evaluate.py --split val --limit 50 --backend openai
+    python scripts/evaluate.py --split val --limit 50 --backend live
 
 Writes ``artifacts/metrics/evaluation.json``. This is the file the metrics dashboard reads and the
 numbers that go in the deck, so it reports the unflattering ones too: where the agents do worse
@@ -28,6 +28,7 @@ from app.config import ARTIFACTS, METRICS_DIR, ensure_dirs  # noqa: E402
 from app.data import incidents as incidents_mod  # noqa: E402
 from app.data import loader  # noqa: E402
 from app.data.schema import LABELS  # noqa: E402
+from app.evaluation import promotion_gate  # noqa: E402
 from app.orchestration.workflow import AGENT_SEQUENCE, Workflow  # noqa: E402
 from app.retrieval import hybrid  # noqa: E402
 from app.retrieval.base import EntityOverlapRetriever  # noqa: E402
@@ -69,13 +70,63 @@ def _prf(truth: list[str], predicted: list[str]) -> dict:
     }
 
 
+def _calibration(truth: list[str], predicted: list[str], confidence: list[float]) -> dict:
+    if not truth:
+        return {"brier": 0.0, "expected_calibration_error": 0.0, "bins": []}
+    correct = [1.0 if actual == guess else 0.0 for actual, guess in zip(truth, predicted)]
+    brier = statistics.fmean((score - outcome) ** 2 for score, outcome in zip(confidence, correct))
+    bins = []
+    ece = 0.0
+    for index in range(10):
+        lower, upper = index / 10, (index + 1) / 10
+        members = [
+            position
+            for position, score in enumerate(confidence)
+            if lower <= score <= upper and (index == 9 or score < upper)
+        ]
+        if not members:
+            continue
+        mean_confidence = statistics.fmean(confidence[position] for position in members)
+        accuracy = statistics.fmean(correct[position] for position in members)
+        ece += len(members) / len(truth) * abs(mean_confidence - accuracy)
+        bins.append(
+            {
+                "lower": lower,
+                "upper": upper,
+                "count": len(members),
+                "confidence": round(mean_confidence, 4),
+                "accuracy": round(accuracy, 4),
+            }
+        )
+    return {
+        "brier": round(brier, 4),
+        "expected_calibration_error": round(ece, 4),
+        "bins": bins,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--split", default="val", choices=["train", "val", "demo", "all"])
     parser.add_argument("--limit", type=int, default=200)
-    parser.add_argument("--backend", choices=["deterministic", "openai", "cache"])
+    parser.add_argument(
+        "--backend",
+        choices=["replay", "live", "deterministic", "openai", "cache"],
+    )
     parser.add_argument("--out", default=str(OUT))
+    parser.add_argument("--current-report", help="same-set report for the currently promoted workflow")
+    parser.add_argument("--baseline-report", help="same-set non-LLM baseline report")
+    parser.add_argument(
+        "--require-promotion",
+        action="store_true",
+        help="exit non-zero unless the full validation run passes all promotion checks",
+    )
     args = parser.parse_args()
+
+    if bool(args.current_report) != bool(args.baseline_report):
+        parser.error("--current-report and --baseline-report must be supplied together")
+    if args.require_promotion and (args.split != "val" or args.limit != 0):
+        parser.error("--require-promotion requires --split val --limit 0")
 
     ensure_dirs()
     evidence, incidents = loader.load_prepared()
@@ -107,6 +158,12 @@ def main() -> int:
     auto_approved = 0
     disagreements = 0
     cluster_collapse = 0
+    confidences: list[float] = []
+    cached_calls = 0
+    agent_calls = 0
+    retries = 0
+    input_tokens = 0
+    output_tokens = 0
     started = time.perf_counter()
 
     for n, (_, row) in enumerate(incidents.iterrows(), start=1):
@@ -116,12 +173,18 @@ def main() -> int:
 
         truth.append(row["label"])
         agent_pred.append(state.triage.label.value if state.triage else "")
+        confidences.append(state.triage.confidence if state.triage else 0.0)
         baseline_pred.append(state.baseline.label.value if state.baseline else "")
 
         if state.verifier:
             verdicts[state.verifier.verdict.value] += 1
         for run in state.runs:
             per_agent_latency[run.agent].append(run.latency_ms)
+            agent_calls += 1
+            cached_calls += int(run.cached)
+            retries += max(0, run.attempts - 1)
+            input_tokens += run.prompt_tokens
+            output_tokens += run.completion_tokens
         if result.degraded_agents():
             degraded += 1
         if state.requires_approval:
@@ -147,6 +210,7 @@ def main() -> int:
         "incidents": total,
         "wall_seconds": round(elapsed, 2),
         "agents": _prf(truth, agent_pred),
+        "calibration": _calibration(truth, agent_pred, confidences),
         "baseline": _prf(truth, [p for p in baseline_pred]) if any(baseline_pred) else None,
         "verifier": {
             "verdicts": dict(verdicts),
@@ -163,6 +227,15 @@ def main() -> int:
             "degraded_rate": round(degraded / total, 4) if total else 0.0,
             "baseline_disagreement_rate": round(disagreements / total, 4) if total else 0.0,
             "incidents_with_cluster_collapse": cluster_collapse,
+            "cache_hit_rate": round(cached_calls / agent_calls, 4) if agent_calls else 0.0,
+            "retry_count": retries,
+        },
+        "usage": {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+            "estimated_cost_usd": None,
+            "cost_note": "No estimate: pricing is intentionally not hardcoded into evaluation artifacts.",
         },
         "latency_ms": {
             name: {
@@ -172,6 +245,11 @@ def main() -> int:
             for name, values in per_agent_latency.items()
         },
     }
+
+    if args.current_report and args.baseline_report:
+        current = json.loads(Path(args.current_report).read_text(encoding="utf-8"))
+        baseline = json.loads(Path(args.baseline_report).read_text(encoding="utf-8"))
+        report["promotion"] = promotion_gate(report, current, baseline)
 
     Path(args.out).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
 
@@ -197,6 +275,9 @@ def main() -> int:
     print(f"  baseline disagreement    {report['reliability']['baseline_disagreement_rate']:.1%}")
     print(f"  degraded runs            {degraded}/{total}")
     print(f"\nreport -> {args.out}")
+    if args.require_promotion and not report.get("promotion", {}).get("passed", False):
+        print("promotion gate failed", file=sys.stderr)
+        return 2
     return 0
 
 

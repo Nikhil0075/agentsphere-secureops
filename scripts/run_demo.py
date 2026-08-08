@@ -2,13 +2,14 @@
 
     python scripts/run_demo.py                              # first showcase incident, offline
     python scripts/run_demo.py --incident INC-0837694b8b09
-    python scripts/run_demo.py --backend openai
+    python scripts/run_demo.py --backend live
     python scripts/run_demo.py --all-showcase --quiet       # every showcase incident + metrics
 
 The Day 3 exit criterion, executable: an incident goes from selection to a triage label with no
 manual intervention, and scattered alerts visibly collapse into fewer clusters.
 
-The default backend is ``deterministic`` — no network, no API key.
+The default mode is ``replay`` — validated cache hits make no network request and a
+miss degrades safely to the deterministic workflow when live execution is unavailable.
 """
 
 from __future__ import annotations
@@ -65,10 +66,15 @@ def print_result(result: WorkflowResult) -> None:
     print("\nagents")
     for run in state.runs:
         flag = "ok " if run.status == "ok" else run.status
+        # A second-attempt success re-sent an identical prompt, so on a live model it is a
+        # resample, not a correction. Worth naming next to the attempt count.
+        note = " resampled" if run.status == "ok" and run.attempts > 1 else ""
         print(
             f"    {run.sequence}. {run.agent:14s} {flag:10s} {run.latency_ms:5d}ms  "
-            f"attempts={run.attempts}  {run.output_hash[:18]}..."
+            f"attempts={run.attempts}{note}  {run.output_hash[:18]}..."
         )
+    if result.revision_fired:
+        print("    (live triage revision fired; replay of this incident produces a different hash)")
 
     if state.detection:
         print(f"\ndetection    severity {state.detection.severity_score:.2f}")
@@ -187,8 +193,16 @@ def print_anchor(conn, persisted, result, approver: str | None) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--incident", help="incident id; defaults to the first showcase case")
-    parser.add_argument("--backend", choices=["deterministic", "openai", "cache"])
+    parser.add_argument("--incident", help="incident id; defaults to demo arc case 1")
+    parser.add_argument(
+        "--backend",
+        choices=["replay", "live", "deterministic", "openai", "cache"],
+    )
+    parser.add_argument(
+        "--demo-arc",
+        action="store_true",
+        help="run the six curated cases in narration order",
+    )
     parser.add_argument("--all-showcase", action="store_true")
     parser.add_argument("--limit", type=int, default=0, help="cap on --all-showcase")
     parser.add_argument("--no-persist", action="store_true", help="skip writing to SQLite")
@@ -209,22 +223,43 @@ def main() -> int:
     evidence, incidents = loader.load_prepared()
     model = scoring.load_baseline()
 
-    if "is_showcase" in incidents:
-        showcase = incidents[incidents["is_showcase"]].sort_values("incident_id")
+    # One ordering for every consumer. This used to sort the showcase by incident id while the UI
+    # and scripts/prewarm_replay.py sorted by risk, so "the first showcase case" meant two
+    # different incidents depending on where you asked.
+    ranked = scoring.prepare_queue_table(incidents, model)
+    if "is_showcase" in ranked:
+        showcase = ranked[ranked["is_showcase"].astype(bool)]
     else:
-        showcase = incidents.head(10)
+        showcase = ranked.head(10)
+    arc = (
+        ranked[ranked["demo_rank"].notna()].sort_values("demo_rank")
+        if "demo_rank" in ranked
+        else ranked.iloc[0:0]
+    )
 
-    if args.all_showcase:
+    if args.demo_arc:
+        if arc.empty:
+            print("no demo arc; run scripts/prepare_data.py", file=sys.stderr)
+            return 1
+        targets = arc["incident_id"].tolist()
+        print(f"target: demo arc, {len(targets)} curated cases in narration order")
+    elif args.all_showcase:
         targets = showcase["incident_id"].tolist()
         if args.limit:
             targets = targets[: args.limit]
+        print(f"target: showcase pool, {len(targets)} cases, highest risk first")
     elif args.incident:
         targets = [args.incident]
+        print(f"target: {args.incident} (explicit)")
+    elif not arc.empty:
+        targets = [str(arc["incident_id"].iloc[0])]
+        print(f"target: demo arc case 1 ({targets[0]})")
+    elif not showcase.empty:
+        targets = [str(showcase["incident_id"].iloc[0])]
+        print(f"target: highest-risk showcase case ({targets[0]}); no demo arc in this build")
     else:
-        if showcase.empty:
-            print("no showcase incidents; run scripts/prepare_data.py", file=sys.stderr)
-            return 1
-        targets = [showcase["incident_id"].iloc[0]]
+        print("no showcase incidents; run scripts/prepare_data.py", file=sys.stderr)
+        return 1
 
     client = build_client(args.backend)
     print(f"backend: {client.backend} ({getattr(client, 'model', '')})")

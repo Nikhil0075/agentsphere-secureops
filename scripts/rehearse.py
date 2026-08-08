@@ -1,7 +1,7 @@
 """Day 7 rehearsal: run the whole system end to end and report what actually happened.
 
     python scripts/rehearse.py
-    python scripts/rehearse.py --backend cache --anchor
+    python scripts/rehearse.py --backend replay --anchor
 
 Covers the §14.3 definition of done and the ten-case sweep §Day-7 asks for: true positives,
 benign positives, false positives, low confidence, an induced agent failure, verifier rejection,
@@ -62,7 +62,7 @@ def _persist(conn, result) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backend", default="deterministic")
+    parser.add_argument("--backend", default="replay")
     parser.add_argument("--anchor", action="store_true", help="also exercise the chain")
     parser.add_argument("--limit", type=int, default=10)
     args = parser.parse_args()
@@ -205,8 +205,45 @@ def main() -> int:
             )
         )
 
+        # --- the curated demo arc -----------------------------------------------------------
+        arc = (
+            incidents[incidents["demo_rank"].notna()].sort_values("demo_rank")
+            if "demo_rank" in incidents
+            else incidents.iloc[0:0]
+        )
+        arc_ranks = [int(value) for value in arc["demo_rank"].tolist()]
+        arc_roles = [str(value) for value in arc["demo_role"].tolist()]
+        cases.append(
+            Case(
+                "demo arc resolves six curated cases",
+                arc_ranks == [1, 2, 3, 4, 5, 6]
+                and len(set(arc_roles)) == len(arc_roles)
+                and bool(arc["is_showcase"].all()),
+                f"{len(arc)} ranked case(s), {len(set(arc['label']))} label(s), "
+                f"{len(set(arc['top_category']))} category(ies)",
+            )
+        )
+
         # --- tamper round trip --------------------------------------------------------------
+        # Target the incident the demo actually tampers -- arc case 1 -- rather than whichever
+        # case the label round-robin happened to put first. Rehearsing a different decision than
+        # the one shown on stage is how a demo-day surprise gets through a green rehearsal.
         target = cases[0].data["decision_id"]
+        arc_first = str(arc["incident_id"].iloc[0]) if not arc.empty else ""
+        if arc_first:
+            swept = next(
+                (c for c in cases if c.data.get("incident_id") == arc_first), None
+            )
+            if swept is not None:
+                target = swept.data["decision_id"]
+            else:
+                arc_row = incidents[incidents["incident_id"] == arc_first].iloc[0]
+                arc_result = workflow.run(
+                    arc_row,
+                    incidents_mod.evidence_for(evidence, arc_first),
+                    baseline_model=model,
+                )
+                target = _persist(conn, arc_result)
         target_wf = conn.execute(
             "SELECT workflow_id FROM decisions WHERE decision_id = ?", (target,)
         ).fetchone()[0]
@@ -229,7 +266,8 @@ def main() -> int:
             Case(
                 "tamper round trip",
                 before.valid is True and during.valid is False and after.valid is True,
-                f"valid -> {'TAMPERED' if during.valid is False else 'not detected'} -> valid",
+                f"valid -> {'TAMPERED' if during.valid is False else 'not detected'} -> valid"
+                + (f"  (arc case 1, {arc_first})" if arc_first else "  (arc unavailable)"),
             )
         )
         conn.execute("DELETE FROM blockchain_proofs WHERE proof_id = 'PRF-rehearse'")

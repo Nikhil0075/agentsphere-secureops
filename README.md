@@ -60,33 +60,51 @@ below.
 | Alert correlation | 870 alerts → 276 clusters (−68%) on one incident; collapses on 18/30 showcase cases |
 | Retrieval index | 5,000 documents, 384-dim, builds in 14.6 s; no API call at query time |
 | Agent chain, offline | six agents, 0 degraded runs, sub-millisecond per agent |
-| Agent chain, live (gpt-4o-mini) | 6/6 agents valid on first attempt, ~22 s end to end |
-| Cache replay | byte-identical output hashes to the live run, zero network |
+| Agent chain, live (gpt-5.6-terra/sol) | 6/6 agents valid, 3–25 s per stage, 45–105 s end to end |
+| Replay | all six demo cases at a full cache hit, **zero network calls**, 145–320 ms each |
+| Live variance, measured | **decision stability 0.50** — 1 of 2 incidents held its label and gate outcome across 3 runs; 3 distinct output hashes per incident either way |
 | On-chain anchoring | decision submitted in ~218k gas; `verify()` VALID; high-risk finalisation reverts |
 | Tamper detection | edit a stored output → recomputed digest diverges → Sepolia `verify()` returns false |
-| Rehearsal sweep | **16/16** cases pass (`scripts/rehearse.py`), 9/10 incidents triaged correctly |
+| Rehearsal sweep | **17/17** cases pass (`scripts/rehearse.py`), 10/10 incidents triaged correctly |
 | WitFoo provenance | 634,190 edges parsed — **reconciles exactly** with the dataset's metadata; 33.8% carry dataset confidence |
-| Tests | **352 Python + 29 Solidity** |
+| Tests | **420 Python + 29 Solidity** |
 
-### Three honesty notes
+### Four honesty notes
 
 **The agent chain does not beat the baseline on classification.** Measured on 40 validation
-incidents against live gpt-4o-mini: agents macro F1 **0.4084** vs baseline **0.4669** — the agents
+incidents against a live model: agents macro F1 **0.4084** vs baseline **0.4669** — the agents
 are *worse* by 0.06. The sample is small (9 TP, 4 FP), so it is not conclusive, but it is
 certainly not evidence that the agent layer improves triage accuracy. What the agent layer
 provides is evidence-grounded explanation, policy enforcement and an audit trail; the LightGBM
 baseline remains the stronger classifier and the system reports both side by side rather than
 quoting whichever is flattering.
 
+**A live run is not repeatable, and we measured how much.** Three live runs each of two demo
+incidents, cache suppressed in both directions (`scripts/measure_variance.py`): one incident held
+its label all three times; the other returned **TruePositive, FalsePositive and BenignPositive on
+three consecutive runs of identical input**, at confidences of 0.36–0.38. Every run produced a
+distinct `output_hash`. That is the real behaviour of a reasoning model with no seed to pin, and
+the reason the demo runs on validated replay rather than live.
+
+Two things did hold, and they are the point. Union-Find correlation returned the same cluster count
+every time — that layer is ours and it is deterministic. And the policy gate demanded a human on
+**every** run of both incidents, including all three contradictory ones, because the confidence
+never cleared the auto-approval floor. The system is not reliable because the model is; it is
+reliable because the model is not trusted to be.
+
 **The deterministic backend's metrics measure plumbing, not reasoning.** On that backend the
 agents score *identically* to the baseline (macro F1 0.7065, 0.0% disagreement) because
 deterministic Triage defers to it by design. Only the `openai` backend produces a meaningful
 agents-vs-baseline comparison.
 
-**Two selection caveats.** The showcase set is filtered to a 3–60 evidence band, so agreement
-rates on it are a biased sample. And `hour_of_day` ranks as the baseline's top feature, which is
-more likely a temporal artefact of the dataset than a security signal — worth pruning before the
-numbers are quoted anywhere.
+**Three selection caveats.** The showcase set is filtered to a 3–60 evidence band, so agreement
+rates on it are a biased sample. The six-case *presentation arc* is a further hand-picked subset
+of that set, chosen for narrative coverage — three labels, four categories, both baseline
+agreement and disagreement, risk 0.70 down to 0.30 — and **no number quoted anywhere is computed
+over it**: evaluation runs on `--split val`, and correlation and rehearsal numbers run on all 30
+showcase cases. And `hour_of_day` ranks as the baseline's top feature, which is more likely a
+temporal artefact of the dataset than a security signal — worth pruning before the numbers are
+quoted anywhere.
 
 ## Quick start
 
@@ -182,9 +200,56 @@ configuration. Kaggle credentials, if prompted for, go in `~/.kaggle/kaggle.json
 
 ### Using a live LLM
 
-Set `LLM_BACKEND=openai` and `OPENAI_API_KEY` in `.env`. Responses are cached to
-`artifacts/llm_cache/`, so a run can be replayed later with `LLM_BACKEND=cache` — no network, same
-outputs.
+Live execution uses the OpenAI Agents SDK and its Responses API. Set `LLM_BACKEND=live` and
+`OPENAI_API_KEY` in `.env`; supporting agents route to `gpt-5.6-terra`, while Triage and Verifier
+route to `gpt-5.6-sol`. To prepare the presentation-safe default, run:
+
+```bash
+.venv/Scripts/python scripts/prewarm_replay.py
+```
+
+Then set `LLM_BACKEND=replay`. Validated responses are read from `artifacts/llm_cache/` with **no
+outbound call under any circumstances** — replay is hermetic, and a miss is a visible error naming
+the fix rather than a silent live call. Live fill is opt-in and belongs to `prewarm_replay.py`
+alone. Compatibility aliases `openai` and `cache` remain accepted.
+
+Agents SDK trace export is disabled by default so local or restricted networks do not leave a
+background exporter retrying after successful API responses. Set `AGENT_TRACING_ENABLED=true` to
+opt in. Trace payload values remain redacted unless `AGENT_TRACE_INCLUDE_SENSITIVE=true` is also
+set explicitly.
+
+Inspect the replay cache with `python scripts/cache_admin.py --audit`. It reports what is servable
+under the active profile, and flags entries that are dead (written before prompt versioning, so
+their keys can never be hit) or suspect (zero latency alongside real token counts — the fingerprint
+of a test double, not of a live response). Pruning moves files to `artifacts/llm_cache/.pruned/`
+rather than deleting them.
+
+### Determinism
+
+Worth being precise about, because "AI agents" and "reproducible" are not usually said together.
+
+- **Replay is reproducible.** Byte-identical cached responses, zero network calls, and each of the
+  six demo cases replays in under a second at a full cache hit. `tests/test_determinism.py`
+  enforces that, including against the manifest's recorded `output_hash`.
+- **Deterministic mode is reproducible.** Pure Python rules over real evidence, no key, no network.
+- **Live is *not* bit-reproducible, and cannot be made so.** The routed models are reasoning models
+  that expose no `temperature`, `top_p` or seed to pin — `LLM_TEMPERATURE` and `LLM_TOP_P` exist
+  and are sent when set, but the active models reject them. Separately, a schema or grounding
+  retry re-sends an identical prompt, which is a resample; such runs are reported as
+  `resampled_agents` rather than passed off as clean first-attempt successes.
+
+So the honest claim is not "the model always says the same thing" but "the presentation path never
+asks it twice, and we measured what happens when you do":
+
+```bash
+python scripts/measure_variance.py --dry-run
+```
+
+It runs the same incidents N times live with the cache suppressed in both directions — reads
+always miss, so no run replays another, and writes never land, so a sweep can never become the
+source of what the demo replays. It reports per-field divergence and, above all,
+**decision stability**: the fraction of incidents whose triage label *and* gate outcome held
+across every run. Results land in `artifacts/metrics/variance.json`.
 
 ## Architecture
 
@@ -213,7 +278,7 @@ tamper-evident without exposing the data.
 | Baseline | LightGBM (falls back to sklearn `HistGradientBoosting`) |
 | Retrieval | BM25 (`rank_bm25`) + FAISS `IndexFlatIP`, fused by RRF (k=60), then a metadata re-rank |
 | Graph | Adjacency dicts; Union-Find, depth-capped BFS, Dijkstra over −log(confidence) |
-| Agents | Structured-output prompts, strict Pydantic validation, temperature 0 |
+| Agents | Structured-output prompts, strict Pydantic validation, hermetic replay for reproducibility |
 | Policy | Deterministic gate over a YAML catalogue — not an LLM, and it has the final word |
 | Storage | SQLite |
 | Proof | keccak256 over canonicalised JSON; `AgentRegistry` + `DecisionProof` on an EVM chain |
@@ -312,7 +377,10 @@ Stated up front rather than defended under questioning:
 - GUIDE's median incident carries **one** evidence row, which limits how much correlation and
   graph traversal can demonstrate on a typical case. The showcase set is filtered to incidents
   with enough evidence to be worth showing, and that filtering is disclosed wherever its numbers
-  appear.
+  appear. The six-case demo arc laid on top of it is presentation-only and is never a denominator.
+- Live agent runs are not bit-reproducible: the routed reasoning models expose no sampling seed.
+  The demo therefore runs on validated replay, and the live variance is measured
+  (`scripts/measure_variance.py`) rather than assumed away.
 - No live SIEM or SOAR integration.
 - All remediation is simulated.
 - On-chain proofs land on a public testnet, not mainnet.

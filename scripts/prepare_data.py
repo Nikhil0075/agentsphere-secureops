@@ -28,6 +28,7 @@ import pandas as pd  # noqa: E402
 from app.config import DATA_PROCESSED, ensure_dirs, settings  # noqa: E402
 from app.data import incidents as incidents_mod  # noqa: E402
 from app.data import loader, sentinels  # noqa: E402
+from app.data.demo_arc import mark_demo_arc  # noqa: E402
 from app.data.schema import LABELS, REQUIRED_COLUMNS  # noqa: E402
 from app.data.summarize import build_incident_summary  # noqa: E402
 
@@ -108,7 +109,11 @@ def build(source: str, max_incidents: int) -> tuple[pd.DataFrame, pd.DataFrame, 
         drop=True
     )
 
+    # Two layers, deliberately separate: `is_showcase` is the 30-case pool that graph building,
+    # rehearsal and evaluation run over; `demo_rank` is the six-case narration order laid on top of
+    # it. See app/data/demo_arc.py for why conflating them (or with `split == "demo"`) is a bug.
     incident_table = mark_showcase(incidents_mod.aggregate(evidence))
+    incident_table, arc_stats = mark_demo_arc(incident_table)
 
     summaries = []
     for _, row in incident_table.iterrows():
@@ -139,6 +144,7 @@ def build(source: str, max_incidents: int) -> tuple[pd.DataFrame, pd.DataFrame, 
             .value_counts()
             .items()
         },
+        "demo_arc": arc_stats,
     }
     return evidence, incident_table, stats
 
@@ -159,6 +165,18 @@ def write(evidence: pd.DataFrame, incident_table: pd.DataFrame, stats: dict) -> 
     return manifest
 
 
+def report_demo_arc(arc: dict) -> None:
+    """Say out loud when the arc is not the hand-picked one. ASCII only: cp1252 console."""
+    size, expected = arc["size"], arc["expected"]
+    print(f"\ndemo arc: {size}/{expected} cases resolved ({len(arc['pinned'])} pinned)")
+    if arc["fallback"]:
+        print(f"  resolved by predicate, not by pin: {', '.join(arc['fallback'])}")
+    if arc["proxy_roles"]:
+        print(f"  approximated by a proxy predicate: {', '.join(arc['proxy_roles'])}")
+    if arc["unresolved"]:
+        print(f"  UNRESOLVED (their ranks are unused): {', '.join(arc['unresolved'])}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", default=settings.data_source, choices=["fixture", "guide"])
@@ -174,6 +192,7 @@ def main() -> int:
     manifest = write(evidence, incident_table, stats)
 
     print(json.dumps(manifest, indent=2, sort_keys=True))
+    report_demo_arc(manifest["demo_arc"])
 
     if args.verify_determinism:
         second_evidence, second_incidents, _ = build(args.source, args.max_incidents)
@@ -185,7 +204,7 @@ def main() -> int:
         if mismatches:
             print(f"\nDETERMINISM CHECK FAILED for: {', '.join(mismatches)}", file=sys.stderr)
             return 1
-        print("\nDETERMINISM CHECK PASSED — both tables reproduce identical content hashes.")
+        print("\nDETERMINISM CHECK PASSED - both tables reproduce identical content hashes.")
 
     return 0
 

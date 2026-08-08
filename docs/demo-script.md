@@ -7,15 +7,43 @@ leaves room in most pitch slots for the questions in §12.3.
 
 ```bash
 python scripts/start.py --check     # every row must read ok
-python scripts/rehearse.py          # must be 16/16
+python scripts/rehearse.py          # must be 17/17
 ```
 
 Run both from a cold start. If either is red, fix that before rehearsing the narration.
 
-Set the backend selector to **deterministic** unless the venue network is known-good. It needs no
-key, no network, and runs in under a second — and every number it produces is real, not canned.
-Switching to `cache` replays actual gpt-4o-mini responses with byte-identical hashes, which is the
-better choice if a judge asks to see real model output without waiting 22 seconds for it.
+Leave the backend selector on **replay**, the default. It reads validated `gpt-5.6-terra` /
+`gpt-5.6-sol` responses from `artifacts/llm_cache/` with byte-identical hashes and **makes no
+network call at all** — a miss is a visible error, never a silent live call. Every one of the six
+demo cases is prewarmed and replay-verified to return in under a second, which matters because
+live stages take 3–25 seconds each.
+
+**deterministic** is the fallback if the cache is cold: no key, no network, sub-second, and every
+number it produces is real rather than canned — but Triage defers to the baseline by design, so do
+not quote its accuracy as the agents'. **live** is for a judge who asks to watch a real call; be
+ready for the wait, and say plainly that a live run is not bit-reproducible.
+
+If `start.py --check` flags the replay row, run `python scripts/prewarm_replay.py` (it makes paid
+calls) and `python scripts/cache_admin.py --audit` to see what is actually in the cache.
+
+## The demo arc
+
+Six curated cases, walked in order with **Next demo**. Between them they cover all three labels,
+four attack categories, the full risk range, baseline agreement and disagreement, and both a
+tampered and an untampered proof path. `Run demo` on Home opens case 1.
+
+| # | incident | truth | baseline | risk | the beat |
+|---|---|---|---|---|---|
+| 1 | INC-020335f5c65e | TruePositive | agrees, 0.86 | 0.70 | the opener, and the decision anchored, tampered and restored in Scene 5 |
+| 2 | INC-0837694b8b09 | TruePositive | agrees, 0.96 | 0.56 | 21 alerts collapse to 10 clusters — alert fatigue, measured |
+| 3 | INC-0874da0f54ed | TruePositive | **wrong**, calls it benign | 0.50 | the agents get this one wrong too — and the gate still refuses to auto-close it |
+| 4 | INC-03c330695cea | BenignPositive | agrees, 0.94 | 0.45 | real activity, authorised — not every detection is an attack |
+| 5 | INC-0abdb2a523a5 | FalsePositive | agrees, 0.95 | 0.37 | the queue noise this system exists to suppress |
+| 6 | INC-1010bda7f63d | FalsePositive | agrees, 0.62 | 0.30 | the bottom of the risk range, in a fourth category |
+
+These six are a *presentation* set, hand-picked for coverage. If asked: no reported number is
+computed over them — accuracy runs on the 1,004-incident validation split, and correlation and
+rehearsal numbers run on all 30 showcase cases.
 
 ---
 
@@ -30,9 +58,13 @@ better choice if a judge asks to see real model output without waiting 22 second
 Point at the risk column and the label column. Note that the ground-truth label is shown to *us*
 and never to the agents.
 
+Then switch to the **Demo arc (6)** tab, which is where the rest of the narration lives. The three
+tabs are worth one sentence if a judge asks: all 5,000 tickets, the 30-case showcase pool, and the
+six-case arc laid on top of it.
+
 ## Scene 2 — Agents collaborate (90s)
 
-**Show:** click an incident, then Workflow → Run workflow.
+**Show:** case 1, then Workflow → Run workflow. (`Run demo` on Home opens it directly.)
 
 > Six specialised agents, not one chatbot. Each has a bounded role and a frozen JSON contract, and
 > each output is hashed as it is produced.
@@ -62,7 +94,13 @@ Point at the baseline stat:
 Skip this if you are tight on time; it is a depth answer, not a story beat. Worth showing to a
 judge who asks how the graph work generalises.
 
-**Show:** the Provenance tab, click the top incident.
+**Show:** open **Explore → Provenance Lab** (or use **Compare shipped graph** from Incident). The
+first matching WitFoo incident is selected automatically. Use **Back to Incident** when finished.
+
+Provenance is deliberately outside the primary Queue → Incident → Workflow → Proof → Metrics
+sequence. It proves graph-layer portability, but WitFoo's threat labels do not contribute to the
+GUIDE decision or its accuracy metrics, so placing it between Proof and Metrics would imply a
+causal role it does not have.
 
 > Everything so far ran on Microsoft GUIDE, which is tabular — we *build* the entity graph from
 > evidence rows. This is WitFoo Precinct6, which ships one: 35,133 nodes, 634,190 labelled edges.
@@ -81,15 +119,38 @@ Point at the amber note at the top.
 
 ## Scene 4 — Human authority (60s)
 
-**Show:** the policy gate card.
+**Show:** Queue → **Next demo** to case 3, run the workflow, then the policy gate card.
 
-> This is not an LLM. It is a dictionary lookup and a set of thresholds, and an agent cannot argue
-> its way past it. This action is medium-risk, so it requires a named human approver — two policies
-> failed independently, and either one alone would have been enough.
+Case 3 is the one worth spending time on, and the honest framing is stronger than the flattering
+one. The ground truth is a true positive; the baseline calls it benign at 0.38; **the agents also
+call it benign.** Say that out loud — a judge who finds it themselves after you have claimed the
+agents caught it will not believe the rest of the demo.
+
+> Everything upstream of this card got this incident wrong. What the system does not do is act on
+> it. This is not an LLM — it is a dictionary lookup and a set of thresholds, and an agent cannot
+> argue its way past it. Confidence sits below the auto-approval floor and the verifier escalated,
+> so two policies failed independently and either one alone would have blocked it. The incident
+> goes to a human, which is exactly what should happen to a case the models find genuinely
+> ambiguous.
+
+That is the argument for the deterministic gate in one screen: the value is not that the models
+are always right, it is that being wrong does not become an action.
+
+If time is short, cases 4–6 can be walked in about twenty seconds with **Next demo**, purely to
+show the spread: a benign positive that is real-but-authorised, and two false positives at the
+bottom of the risk range. It is the same six agents and the same gate reaching different answers.
 
 ## Scene 5 — Proof, then tamper (120s) ← **the moment**
 
-**Show:** Anchor proof on chain, then the integrity card.
+**Show:** go back to **case 1**, then the **Proof** tab, then press **Anchor proof on chain**.
+
+Case 1 is the one `scripts/rehearse.py` exercises for tamper/restore, so this is the exact
+decision the rehearsal proved rather than a different one that merely resembles it.
+
+This scene has its own tab now — it used to sit at the bottom of the Workflow scroll, which meant
+the strongest beat in the pitch arrived after a scroll past everything else. The verdict is the
+largest thing on the screen and the two digests sit side by side, so the room reads the evidence
+rather than a badge.
 
 > That's a real transaction on Sepolia. The contract stores digests, an agent identity and approval
 > state — never evidence, never prompts. Anchored and recomputed digests match.
@@ -112,7 +173,9 @@ Press **Restore** so the next run is clean.
 **Show:** the Metrics tab.
 
 > Baseline versus agents on the same incidents. Verifier rejection and escalation rates. The share
-> of anchored decisions that still verify — recomputed live, not a counter. And the entity graph's
+> of successfully anchored decisions that still verify — recomputed locally, not a counter and
+> with zero Sepolia calls. Live contract confirmation stays on the single-decision Proof screen.
+> And the entity graph's
 > worst hub at degree 1,025, which is why traversal is capped: an uncapped search from that node
 > returns most of the graph and freezes the demo.
 
@@ -123,8 +186,12 @@ Press **Restore** so the next run is clean.
 | Symptom | Do this |
 |---|---|
 | Workflow is slow or errors | Switch the backend selector to **deterministic**. No network, sub-second. |
+| `start.py --check` flags **demo replay** | `python scripts/prewarm_replay.py` (paid). `python scripts/cache_admin.py --audit` says what is actually in the cache. |
+| `start.py --check` flags **demo arc** | `python scripts/prepare_data.py` — the arc columns are missing or a role went unresolved. |
+| A stage says it degraded on replay | That entry failed validation and was evicted; re-run `prewarm_replay.py` to resample just that stage. |
 | Proof panel says no chain reachable | Say so plainly: "the testnet is unreachable, so the panel degrades — the workflow, the gate and the digests are unaffected." That is the designed behaviour, not a failure. |
 | Tamper shows VALID | You are on a decision that was never anchored. Press **Anchor proof on chain** first. |
+| Proof tab says "no decision yet" | Run the workflow first — Proof reads the decision that run produced. The button on that screen takes you there. |
 | Frontend blank | `python scripts/start.py --check`, then restart. |
 
 Keep a terminal open on `python scripts/run_demo.py --incident <id> --anchor`. It produces the same
@@ -146,5 +213,19 @@ Short answers; the long ones are in §12.3 of the master plan.
   BFS, Dijkstra on −log(confidence) and the contract-level authorisation are all outside the model.
 - **How much was built during the hackathon?** All of it; the commit history covers the build
   window. Prior work is a conceptual framing, disclosed in the README.
+- **Is it deterministic? Would it say the same thing twice?** Be precise, because the honest
+  answer is more interesting. The demo runs on validated replay: byte-identical cached responses,
+  zero network calls, six cases in about a second, and a test that fails if any stage misses the
+  cache. Live is *not* bit-reproducible and cannot be — these are reasoning models with no
+  temperature, top_p or seed to pin. So we measured it rather than claiming it:
+  `scripts/measure_variance.py` runs the same incidents repeatedly with the cache suppressed in
+  both directions and reports how often the triage label and the gate outcome actually move.
+- **What stops an agent inventing evidence?** Every citation is checked against the incident's own
+  evidence bundle before the output is accepted, and the same goes for entity values, remediation
+  actions, similar-incident ids and MITRE technique ids. It fires in practice: during preparation
+  the live model emitted `[""]` and then `[":"]` into a triage evidence bundle, and both were
+  rejected rather than reaching the decision. A rejected response is also evicted from the cache,
+  so a bad generation cannot be replayed forever.
 - **What are the limitations?** Offer them before being asked — the README lists them, including
-  that the agents currently classify worse than the baseline.
+  that the agents currently classify worse than the baseline, and that on demo case 3 the agents
+  get the answer wrong and the gate is what stops it becoming an action.

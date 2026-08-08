@@ -13,6 +13,7 @@ one is missing and which command fixes it, then starts both servers and shuts th
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -21,7 +22,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.config import ARTIFACTS, DATA_PROCESSED, MODELS_DIR, REPO_ROOT, settings  # noqa: E402
+from app.agents.llm import model_profile, normalize_mode  # noqa: E402
+from app.config import ARTIFACTS, DATA_PROCESSED, LLM_CACHE_DIR, MODELS_DIR, REPO_ROOT, settings  # noqa: E402
 
 API_PORT = 8000
 UI_PORT = 5173
@@ -108,9 +110,64 @@ def preflight() -> list[Check]:
         )
     )
 
+    # The six-case arc is what Run demo and Next demo walk. Reported from the dataset manifest
+    # rather than recounted, so an incomplete arc says so instead of looking fine.
+    dataset_manifest = {}
+    try:
+        dataset_manifest = json.loads(
+            (DATA_PROCESSED / "manifest.json").read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        pass
+    arc = dataset_manifest.get("demo_arc") or {}
+    arc_complete = bool(arc.get("complete"))
     checks.append(
-        Check("llm backend", True, f"{settings.llm_backend} (deterministic needs no key)", "")
+        Check(
+            "demo arc",
+            arc_complete,
+            (
+                f"{arc.get('size', 0)}/{arc.get('expected', 6)} curated cases, ranks 1-6"
+                if arc_complete
+                else f"{arc.get('size', 0)}/{arc.get('expected', 6)} resolved"
+                + (f"; unresolved: {', '.join(arc.get('unresolved', []))}" if arc.get("unresolved") else "")
+            ),
+            "python scripts/prepare_data.py",
+        )
     )
+
+    mode = normalize_mode(settings.llm_backend)
+    checks.append(Check("agent mode", True, f"{mode} ({model_profile()})", ""))
+
+    if mode == "replay":
+        manifest_path = LLM_CACHE_DIR / "demo_manifest.json"
+        manifest = {}
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            pass
+        # `ready` already folds in replay verification, but check it explicitly: warming proves
+        # the live calls worked, verification proves the demo can actually replay them.
+        profile_matches = manifest.get("model_profile") == model_profile()
+        verified = bool(manifest.get("replay_verified"))
+        replay_ready = bool(manifest.get("ready")) and profile_matches and verified
+
+        if replay_ready:
+            detail = (
+                f"{len(manifest.get('completed', []))}/{manifest.get('expected', 0)} "
+                f"{manifest.get('pool', 'arc')} cases prewarmed and replay-verified"
+            )
+        elif not manifest:
+            detail = "never prewarmed"
+        elif not profile_matches:
+            detail = "prewarmed under a different model or prompt version"
+        elif not verified:
+            detail = "warmed but replay not verified; some stage would miss the cache"
+        else:
+            detail = f"{len(manifest.get('failures', {}))} case(s) degraded during warming"
+
+        checks.append(
+            Check("demo replay", replay_ready, detail, "python scripts/prewarm_replay.py")
+        )
     return checks
 
 
