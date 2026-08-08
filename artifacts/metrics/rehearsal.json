@@ -1,58 +1,58 @@
 {
-  "backend": "deterministic",
-  "passed": 16,
-  "total": 16,
-  "mean_latency_ms": 0.4,
+  "backend": "replay",
+  "passed": 17,
+  "total": 17,
+  "mean_latency_ms": 7371.2,
   "cases": [
     {
       "name": "01 INC-00b71d3f2cbc",
       "passed": true,
-      "detail": "truth BenignPositive  -> BenignPositive  @0.56  verifier=accept   approval=yes"
+      "detail": "truth BenignPositive  -> BenignPositive  @0.56  verifier=escalate approval=yes"
     },
     {
       "name": "02 INC-011b552f92f1",
       "passed": true,
-      "detail": "truth FalsePositive   -> FalsePositive   @0.70  verifier=accept   approval=yes"
+      "detail": "truth FalsePositive   -> FalsePositive   @0.70  verifier=escalate approval=yes"
     },
     {
       "name": "03 INC-002cdb785d37",
       "passed": true,
-      "detail": "truth TruePositive    -> TruePositive    @0.73  verifier=accept   approval=yes"
+      "detail": "truth TruePositive    -> TruePositive    @0.73  verifier=escalate approval=yes"
     },
     {
       "name": "04 INC-016c5a1b5220",
       "passed": true,
-      "detail": "truth BenignPositive  -> BenignPositive  @0.71  verifier=accept   approval=yes"
+      "detail": "truth BenignPositive  -> BenignPositive  @0.71  verifier=escalate approval=yes"
     },
     {
       "name": "05 INC-031dcc239493",
       "passed": true,
-      "detail": "truth FalsePositive   -> FalsePositive   @0.58  verifier=accept   approval=yes"
+      "detail": "truth FalsePositive   -> FalsePositive   @0.58  verifier=escalate approval=yes"
     },
     {
       "name": "06 INC-019ade45fefa",
       "passed": true,
-      "detail": "truth TruePositive    -> TruePositive    @0.51  verifier=accept   approval=yes"
+      "detail": "truth TruePositive    -> TruePositive    @0.51  verifier=escalate approval=yes"
     },
     {
       "name": "07 INC-0199ddc3503d",
       "passed": true,
-      "detail": "truth BenignPositive  -> TruePositive    @0.47  verifier=accept   approval=yes"
+      "detail": "truth BenignPositive  -> TruePositive    @0.47  verifier=escalate approval=yes"
     },
     {
       "name": "08 INC-051c410838ee",
       "passed": true,
-      "detail": "truth FalsePositive   -> FalsePositive   @0.77  verifier=accept   approval=yes"
+      "detail": "truth FalsePositive   -> FalsePositive   @0.77  verifier=escalate approval=yes"
     },
     {
       "name": "09 INC-020335f5c65e",
       "passed": true,
-      "detail": "truth TruePositive    -> TruePositive    @0.73  verifier=accept   approval=yes"
+      "detail": "truth TruePositive    -> TruePositive    @0.82  verifier=escalate approval=yes"
     },
     {
       "name": "10 INC-01b337d461ce",
       "passed": true,
-      "detail": "truth BenignPositive  -> BenignPositive  @0.61  verifier=accept   approval=yes"
+      "detail": "truth BenignPositive  -> BenignPositive  @0.61  verifier=escalate approval=yes"
     },
     {
       "name": "covers all three labels",
@@ -80,9 +80,14 @@
       "detail": "a gate that never says yes is not a gate, it is a stop sign"
     },
     {
+      "name": "demo arc resolves six curated cases",
+      "passed": true,
+      "detail": "6 ranked case(s), 3 label(s), 4 category(ies)"
+    },
+    {
       "name": "tamper round trip",
       "passed": true,
-      "detail": "valid -> TAMPERED -> valid"
+      "detail": "valid -> TAMPERED -> valid  (arc case 1, INC-020335f5c65e)"
     }
   ]
 }

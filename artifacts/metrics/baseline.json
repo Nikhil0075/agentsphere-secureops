@@ -59,7 +59,7 @@
     "top_detector": 0.0621,
     "top_entity_type": 0.0406
   },
-  "generated_at": "2026-08-04T12:04:34.178243+00:00",
+  "generated_at": "2026-08-08T17:51:36.752029+00:00",
   "implementation": "lightgbm-4.7.0",
   "macro_f1": 0.6774,
   "per_class": {

@@ -1,0 +1,367 @@
+{
+  "cache": "suppressed (no reads, no writes)",
+  "decision_stability": 0.5,
+  "generated_at": "2026-08-07T17:01:52.439179+00:00",
+  "incidents": {
+    "INC-020335f5c65e": {
+      "correlation": {
+        "cluster_count": {
+          "counts": {
+            "18": 3
+          },
+          "modal": "18",
+          "n_distinct": 1,
+          "values": [
+            "18"
+          ]
+        },
+        "deterministic": true
+      },
+      "cost": {
+        "latency_ms": {
+          "max": 120986.0,
+          "min": 107104.0,
+          "spread": 13882.0,
+          "stdev": 5720.9441
+        },
+        "tokens": {
+          "max": 29634.0,
+          "min": 24010.0,
+          "spread": 5624.0,
+          "stdev": 2629.7626
+        }
+      },
+      "decision_stable": true,
+      "detection": {
+        "severity_score": {
+          "max": 0.78,
+          "min": 0.72,
+          "spread": 0.06,
+          "stdev": 0.0283
+        }
+      },
+      "gate": {
+        "auto_approved": {
+          "counts": {
+            "False": 3
+          },
+          "modal": "False",
+          "n_distinct": 1,
+          "values": [
+            "False"
+          ]
+        },
+        "requires_approval": {
+          "counts": {
+            "True": 3
+          },
+          "modal": "True",
+          "n_distinct": 1,
+          "values": [
+            "True"
+          ]
+        }
+      },
+      "investigation": {
+        "mitre_techniques": {
+          "exact_match_rate": 1.0,
+          "mean_pairwise_jaccard": 1.0,
+          "union_size": 0
+        },
+        "similar_case_ids": {
+          "exact_match_rate": 1.0,
+          "mean_pairwise_jaccard": 1.0,
+          "union_size": 5
+        }
+      },
+      "output_hash": {
+        "n_distinct": 3
+      },
+      "remediation": {
+        "action_risk": {
+          "counts": {
+            "low": 3
+          },
+          "modal": "low",
+          "n_distinct": 1,
+          "values": [
+            "low"
+          ]
+        },
+        "recommended_action": {
+          "counts": {
+            "monitor_and_watchlist": 3
+          },
+          "modal": "monitor_and_watchlist",
+          "n_distinct": 1,
+          "values": [
+            "monitor_and_watchlist"
+          ]
+        }
+      },
+      "run_health": {
+        "degraded": {
+          "counts": {
+            "none": 3
+          },
+          "modal": "none",
+          "n_distinct": 1,
+          "values": [
+            "none"
+          ]
+        },
+        "resampled": {
+          "counts": {
+            "none": 3
+          },
+          "modal": "none",
+          "n_distinct": 1,
+          "values": [
+            "none"
+          ]
+        },
+        "revision_fired": {
+          "counts": {
+            "True": 3
+          },
+          "modal": "True",
+          "n_distinct": 1,
+          "values": [
+            "True"
+          ]
+        }
+      },
+      "triage": {
+        "cited_evidence": {
+          "exact_match_rate": 1.0,
+          "mean_pairwise_jaccard": 1.0,
+          "union_size": 12
+        },
+        "confidence": {
+          "max": 0.51,
+          "min": 0.42,
+          "spread": 0.09,
+          "stdev": 0.0403
+        },
+        "label": {
+          "counts": {
+            "TruePositive": 3
+          },
+          "modal": "TruePositive",
+          "n_distinct": 1,
+          "values": [
+            "TruePositive"
+          ]
+        }
+      },
+      "verifier": {
+        "contradictions": {
+          "max": 5.0,
+          "min": 3.0,
+          "spread": 2.0,
+          "stdev": 0.9428
+        },
+        "verdict": {
+          "counts": {
+            "escalate": 3
+          },
+          "modal": "escalate",
+          "n_distinct": 1,
+          "values": [
+            "escalate"
+          ]
+        }
+      }
+    },
+    "INC-0874da0f54ed": {
+      "correlation": {
+        "cluster_count": {
+          "counts": {
+            "28": 3
+          },
+          "modal": "28",
+          "n_distinct": 1,
+          "values": [
+            "28"
+          ]
+        },
+        "deterministic": true
+      },
+      "cost": {
+        "latency_ms": {
+          "max": 115575.0,
+          "min": 72666.0,
+          "spread": 42909.0,
+          "stdev": 18167.8892
+        },
+        "tokens": {
+          "max": 28089.0,
+          "min": 19961.0,
+          "spread": 8128.0,
+          "stdev": 3415.7559
+        }
+      },
+      "decision_stable": false,
+      "detection": {
+        "severity_score": {
+          "max": 0.48,
+          "min": 0.42,
+          "spread": 0.06,
+          "stdev": 0.0283
+        }
+      },
+      "gate": {
+        "auto_approved": {
+          "counts": {
+            "False": 3
+          },
+          "modal": "False",
+          "n_distinct": 1,
+          "values": [
+            "False"
+          ]
+        },
+        "requires_approval": {
+          "counts": {
+            "True": 3
+          },
+          "modal": "True",
+          "n_distinct": 1,
+          "values": [
+            "True"
+          ]
+        }
+      },
+      "investigation": {
+        "mitre_techniques": {
+          "exact_match_rate": 1.0,
+          "mean_pairwise_jaccard": 1.0,
+          "union_size": 0
+        },
+        "similar_case_ids": {
+          "exact_match_rate": 1.0,
+          "mean_pairwise_jaccard": 1.0,
+          "union_size": 5
+        }
+      },
+      "output_hash": {
+        "n_distinct": 3
+      },
+      "remediation": {
+        "action_risk": {
+          "counts": {
+            "low": 3
+          },
+          "modal": "low",
+          "n_distinct": 1,
+          "values": [
+            "low"
+          ]
+        },
+        "recommended_action": {
+          "counts": {
+            "close_as_false_positive": 1,
+            "monitor_and_watchlist": 2
+          },
+          "modal": "monitor_and_watchlist",
+          "n_distinct": 2,
+          "values": [
+            "close_as_false_positive",
+            "monitor_and_watchlist"
+          ]
+        }
+      },
+      "run_health": {
+        "degraded": {
+          "counts": {
+            "none": 3
+          },
+          "modal": "none",
+          "n_distinct": 1,
+          "values": [
+            "none"
+          ]
+        },
+        "resampled": {
+          "counts": {
+            "none": 2,
+            "triage": 1
+          },
+          "modal": "none",
+          "n_distinct": 2,
+          "values": [
+            "none",
+            "triage"
+          ]
+        },
+        "revision_fired": {
+          "counts": {
+            "False": 1,
+            "True": 2
+          },
+          "modal": "True",
+          "n_distinct": 2,
+          "values": [
+            "False",
+            "True"
+          ]
+        }
+      },
+      "triage": {
+        "cited_evidence": {
+          "exact_match_rate": 0.3333,
+          "mean_pairwise_jaccard": 0.3889,
+          "union_size": 12
+        },
+        "confidence": {
+          "max": 0.38,
+          "min": 0.36,
+          "spread": 0.02,
+          "stdev": 0.0094
+        },
+        "label": {
+          "counts": {
+            "BenignPositive": 1,
+            "FalsePositive": 1,
+            "TruePositive": 1
+          },
+          "modal": "TruePositive",
+          "n_distinct": 3,
+          "values": [
+            "BenignPositive",
+            "FalsePositive",
+            "TruePositive"
+          ]
+        }
+      },
+      "verifier": {
+        "contradictions": {
+          "max": 5.0,
+          "min": 0.0,
+          "spread": 5.0,
+          "stdev": 2.1602
+        },
+        "verdict": {
+          "counts": {
+            "escalate": 3
+          },
+          "modal": "escalate",
+          "n_distinct": 1,
+          "values": [
+            "escalate"
+          ]
+        }
+      }
+    }
+  },
+  "model_profile": {
+    "judge": "gpt-5.6-sol",
+    "prompt_version": "2026-08-06",
+    "reasoning": "medium",
+    "support": "gpt-5.6-terra"
+  },
+  "reasoning_effort": "medium",
+  "runs_per_incident": 3,
+  "total_live_calls": 36,
+  "wall_seconds": 682.9
+}

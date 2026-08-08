@@ -17,6 +17,11 @@
           "title": "Backend",
           "type": "string"
         },
+        "cached": {
+          "default": false,
+          "title": "Cached",
+          "type": "boolean"
+        },
         "completion_tokens": {
           "default": 0,
           "title": "Completion Tokens",
@@ -48,6 +53,11 @@
         },
         "status": {
           "title": "Status",
+          "type": "string"
+        },
+        "trace_id": {
+          "default": "",
+          "title": "Trace Id",
           "type": "string"
         },
         "validation_error": {
