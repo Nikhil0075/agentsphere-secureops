@@ -1,49 +1,98 @@
-import { useState } from "react";
-import { api, type IntegrityInfo, type ProofInfo, type WorkflowResponse } from "../lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { api, type ExecutionMode, type WorkflowResponse } from "../lib/api";
 import {
   Badge,
+  Button,
   Card,
   CheckRow,
   Empty,
   ErrorNote,
   Hash,
   LabelBadge,
+  Note,
+  PageIntro,
   Spinner,
   Stat,
+  TextInput,
 } from "../components/primitives";
+import { AgentStageCard } from "../components/workflow/AgentStageCard";
 
-const AGENTS = [
-  "detection",
-  "correlation",
-  "investigation",
-  "triage",
-  "remediation",
-  "verifier",
-] as const;
+/** The contract sequence. A run longer than this fired the live revision pass. */
+const BASE_STAGES = 6;
 
-/** Scenes 2, 4 and 5: agent collaboration, the human gate, and the on-chain proof. */
+export interface SessionRun {
+  at: number;
+  incident_id: string;
+  label: WorkflowResponse["label"];
+  confidence: number;
+  total_latency_ms: number;
+  cache_status: WorkflowResponse["cache_status"];
+  execution_mode: ExecutionMode;
+  degraded: number;
+  resampled: number;
+  revision_fired: boolean;
+}
+
+/**
+ * Scenes 2 and 4 — agent collaboration, and the human authority that constrains it.
+ *
+ * Every agent now gets its own card carrying three things: the prompt it was given, the output it
+ * produced, and how the call went. Detection, Correlation and Investigation used to render nothing
+ * at all while their full output sat in the payload.
+ *
+ * Stages are derived from `result.runs` rather than from a fixed list of six names, because the
+ * live revision pass runs triage, remediation and verifier a second time and a name-keyed view
+ * silently collapses the two.
+ */
 export function Workflow({
   incidentId,
   backend,
+  onDecision,
+  onRunComplete,
 }: {
   incidentId: string;
-  backend: string;
+  backend: ExecutionMode;
+  onDecision: (id: string | null) => void;
+  onRunComplete?: (run: SessionRun) => void;
 }) {
   const [result, setResult] = useState<WorkflowResponse | null>(null);
-  const [integrity, setIntegrity] = useState<IntegrityInfo | null>(null);
   const [running, setRunning] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [analyst, setAnalyst] = useState("analyst@soc");
   const [comment, setComment] = useState("");
+  const [approved, setApproved] = useState<boolean | null>(null);
+  const [focused, setFocused] = useState<number | null>(null);
+
+  useEffect(() => {
+    setResult(null);
+    setApproved(null);
+    setFocused(null);
+    onDecision(null);
+  }, [incidentId, onDecision]);
 
   const run = async () => {
     setRunning(true);
     setError("");
-    setIntegrity(null);
     setResult(null);
+    setApproved(null);
+    onDecision(null);
     try {
-      setResult(await api.runWorkflow(incidentId, backend));
+      const r = await api.runWorkflow(incidentId, backend);
+      setResult(r);
+      onDecision(r.decision_id || null);
+      onRunComplete?.({
+        at: Date.now(),
+        incident_id: r.incident_id,
+        label: r.label,
+        confidence: r.confidence,
+        total_latency_ms: r.total_latency_ms,
+        cache_status: r.cache_status,
+        execution_mode: r.execution_mode,
+        degraded: r.degraded_agents.length,
+        resampled: r.resampled_agents.length,
+        revision_fired: r.revision_fired,
+      });
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -51,14 +100,13 @@ export function Workflow({
     }
   };
 
-  /** Anchor and approve return chain state; refresh the integrity view alongside them so the
-      panel never shows a verdict from before the last action. */
-  const act = async (what: string, fn: () => Promise<ProofInfo>) => {
-    setBusy(what);
+  const decide = async (ok: boolean) => {
+    if (!result?.decision_id) return;
+    setBusy(ok ? "approve" : "reject");
     setError("");
     try {
-      await fn();
-      if (result?.decision_id) setIntegrity(await api.verify(result.decision_id));
+      await api.approve(result.decision_id, ok, analyst, comment);
+      setApproved(ok);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -66,46 +114,49 @@ export function Workflow({
     }
   };
 
-  /** Verify, tamper and restore all answer the same question: does the stored record still hash
-      to what was anchored? */
-  const actIntegrity = async (what: string, fn: () => Promise<IntegrityInfo>) => {
-    setBusy(what);
-    setError("");
-    try {
-      setIntegrity(await fn());
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setBusy("");
-    }
+  const focusStage = (index: number) => {
+    setFocused(index);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById(`agent-stage-${index}`)?.scrollIntoView({
+      behavior: reducedMotion ? "auto" : "smooth",
+      block: "center",
+    });
   };
+
+  const stages = useMemo(
+    () =>
+      (result?.runs ?? []).map((run, index) => ({
+        run,
+        index,
+        trace: result?.traces?.find((t) => t.run_index === index) ?? null,
+      })),
+    [result],
+  );
 
   return (
     <div className="space-y-4">
+      <PageIntro
+        eyebrow="Scenes 2 & 4 · Coordinated analysis"
+        title="Let specialists collaborate—then stop at human authority."
+        description="Each stage shows what it was asked, what it produced, and how the call went. The prompts are readable on purpose: no ground-truth label reaches an agent that decides."
+      />
+
       <Card
         title="Agent workflow"
-        subtitle={`Detection → Correlation → Investigation → Triage → Remediation → Verifier, then the policy gate. Backend: ${backend}.`}
+        subtitle={`Detection → Correlation → Investigation → Triage → Remediation → Verifier, then the deterministic policy gate. Backend: ${backend}.`}
         right={
-          <button
-            onClick={run}
-            disabled={running}
-            className={`rounded bg-accent px-3 py-1.5 text-xs font-semibold text-ink-950 transition hover:bg-accent/90 disabled:opacity-50 ${
-              running ? "running" : ""
-            }`}
-          >
+          <Button variant="primary" onClick={run} disabled={running} className={running ? "running" : ""}>
             {running ? "Running…" : "Run workflow"}
-          </button>
+          </Button>
         }
       >
         {error && <ErrorNote>{error}</ErrorNote>}
         {running && <Spinner label="Six agents working…" />}
-        {!running && !result && (
-          <Empty>Run the workflow on {incidentId} to see the agent chain.</Empty>
-        )}
+        {!running && !result && <Empty>Run the workflow on {incidentId} to see the agent chain.</Empty>}
 
         {result && (
           <>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
               <Stat
                 label="Triage"
                 value={result.label ? <LabelBadge label={result.label} /> : "—"}
@@ -113,13 +164,13 @@ export function Workflow({
               />
               <Stat
                 label="Baseline"
-                value={result.baseline?.label.replace("Positive", "") ?? "—"}
+                value={result.baseline ? result.baseline.label.replace("Positive", "") : "—"}
                 hint={
                   result.baseline
-                    ? result.baseline.label === result.label
-                      ? "agrees"
-                      : "disagrees"
-                    : undefined
+                    ? `${(result.baseline.confidence * 100).toFixed(0)}% · ${
+                        result.baseline.label === result.label ? "agrees" : "disagrees"
+                      }`
+                    : "unavailable"
                 }
                 tone={
                   result.baseline && result.baseline.label !== result.label ? "warn" : undefined
@@ -139,35 +190,90 @@ export function Workflow({
               <Stat
                 label="Latency"
                 value={`${result.total_latency_ms}ms`}
-                hint={result.degraded_agents.length ? `${result.degraded_agents.length} degraded` : "all ok"}
-                tone={result.degraded_agents.length ? "warn" : undefined}
+                hint={
+                  result.degraded_agents.length
+                    ? `${result.degraded_agents.length} degraded`
+                    : result.resampled_agents.length
+                      ? `${result.resampled_agents.length} resampled`
+                      : "all ok"
+                }
+                tone={
+                  result.degraded_agents.length || result.resampled_agents.length
+                    ? "warn"
+                    : undefined
+                }
+              />
+              <Stat
+                label="Execution"
+                value={result.execution_mode}
+                hint={result.cache_status.replace("_", " ")}
+                tone={
+                  result.cache_status === "degraded"
+                    ? "warn"
+                    : result.cache_status === "hit"
+                      ? "good"
+                      : undefined
+                }
+              />
+              <Stat
+                label="Tokens"
+                value={result.token_usage.total.toLocaleString()}
+                hint={`${result.token_usage.input.toLocaleString()} in · ${result.token_usage.output.toLocaleString()} out`}
+                tone={result.revision_fired ? "warn" : undefined}
               />
             </div>
 
+            <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1.5 border-t border-line pt-3 text-2xs sm:grid-cols-3">
+              <Meta label="Workflow">
+                <span className="mono text-muted">{result.workflow_id}</span>
+              </Meta>
+              <Meta label="Evidence hash">
+                <Hash value={result.evidence_hash} chars={14} />
+              </Meta>
+              <Meta label="Output hash">
+                <Hash value={result.output_hash} chars={14} />
+              </Meta>
+            </dl>
+            {Object.keys(result.model_profile).length > 0 && (
+              <p className="mt-1.5 text-3xs text-faint">
+                {Object.entries(result.model_profile)
+                  .map(([key, value]) => `${key}: ${value}`)
+                  .join(" · ")}
+              </p>
+            )}
+
+            {result.errors.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                {result.errors.map((message, index) => (
+                  <ErrorNote key={index}>{message}</ErrorNote>
+                ))}
+              </div>
+            )}
+
             {result.correlation_info && (
-              <div className="mt-3 rounded border border-ink-800 bg-ink-850 p-3">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-[11px] uppercase tracking-wide text-ink-400">
+              <div className="mt-4 rounded-xl bg-raised p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-2xs font-medium uppercase tracking-wider text-faint">
                     Union-Find alert correlation
                   </span>
-                  <span className="text-xs text-ink-300">
-                    <span className="mono text-base font-semibold text-ink-100">
+                  <span className="text-sm text-muted">
+                    <span className="mono text-xl font-bold text-text">
                       {result.correlation_info.alert_count}
                     </span>{" "}
                     alerts →{" "}
-                    <span className="mono text-base font-semibold text-accent">
+                    <span className="mono text-xl font-bold text-primary">
                       {result.correlation_info.cluster_count}
                     </span>{" "}
                     clusters
                     {result.correlation_info.reduction > 0 && (
-                      <span className="ml-1.5 text-fp">
+                      <span className="ml-2 font-semibold text-fp">
                         −{(result.correlation_info.reduction * 100).toFixed(0)}%
                       </span>
                     )}
                   </span>
                 </div>
                 {result.correlation_info.clusters.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {result.correlation_info.clusters.slice(0, 8).map((c) => (
                       <Badge key={c.cluster_id}>
                         {c.cluster_id} · {c.size} alert{c.size === 1 ? "" : "s"}
@@ -178,104 +284,95 @@ export function Workflow({
                     ))}
                   </div>
                 )}
+                <p className="mt-2 text-3xs text-faint">
+                  Largest cluster: {result.correlation_info.largest_cluster} alert
+                  {result.correlation_info.largest_cluster === 1 ? "" : "s"}.
+                </p>
               </div>
             )}
-
-            <div className="mt-3 space-y-1.5">
-              {AGENTS.map((name) => {
-                const run = result.runs.find((r) => r.agent === name);
-                const ok = run?.status === "ok";
-                return (
-                  <div
-                    key={name}
-                    className="flex items-center gap-3 rounded border border-ink-800 bg-ink-850 px-3 py-2"
-                  >
-                    <span className="mono w-5 text-xs text-ink-600">{run?.sequence ?? "·"}</span>
-                    <span className="w-28 text-xs font-medium text-ink-200">{name}</span>
-                    <span
-                      className={`w-16 rounded px-1.5 py-0.5 text-center text-[10px] font-bold ${
-                        ok ? "bg-fp/20 text-fp" : "bg-bp/20 text-bp"
-                      }`}
-                    >
-                      {run?.status ?? "—"}
-                    </span>
-                    <span className="mono w-16 text-right text-xs text-ink-400">
-                      {run ? `${run.latency_ms}ms` : ""}
-                    </span>
-                    <span className="mono w-14 text-right text-xs text-ink-600">
-                      {run && run.prompt_tokens + run.completion_tokens > 0
-                        ? `${run.prompt_tokens + run.completion_tokens}t`
-                        : ""}
-                    </span>
-                    <span className="ml-auto">
-                      <Hash value={run?.output_hash ?? ""} chars={14} />
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
           </>
         )}
       </Card>
 
-      {result?.triage && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card title="Triage rationale" subtitle="Every claim cites specific evidence ids.">
-            <p className="text-sm leading-relaxed text-ink-300">{result.triage.rationale}</p>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {result.triage.supporting_evidence_ids.slice(0, 10).map((id) => (
-                <span key={id} className="mono rounded bg-ink-800 px-1.5 py-0.5 text-[10px] text-ink-400">
-                  {id}
-                </span>
+      {result && stages.length > 0 && (
+        <div className="grid gap-4 lg:grid-cols-[22rem_1fr] lg:items-start">
+          {/* Sticky so the chain stays on screen while its outputs are read beside it. */}
+          <Card
+            title="Agent chain"
+            subtitle="A degraded agent reads `fallback`, never `ok`."
+            className="min-w-0 lg:sticky lg:top-24"
+          >
+            <div className="space-y-1.5">
+              {stages.map(({ run, index }) => (
+                <div key={index}>
+                  {index === BASE_STAGES && (
+                    <div className="my-2 border-t border-dashed border-line pt-2">
+                      <p className="text-3xs leading-relaxed text-bp">
+                        Revision pass (live only). A run that fires it has nine stages and an
+                        output hash its replay cannot reproduce.
+                      </p>
+                    </div>
+                  )}
+                  <div
+                    className={`interactive-card w-full rounded-lg ${
+                      focused === index
+                        ? "bg-primary-soft ring-1 ring-inset ring-primary-line"
+                        : "bg-raised hover:bg-primary-soft"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={focused === index}
+                      onClick={() => focusStage(index)}
+                      className="w-full px-3 pb-1 pt-2.5 text-left"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="mono w-4 text-xs text-faint">{run.sequence}</span>
+                        <span className="flex-1 text-xs font-semibold capitalize text-text">
+                          {run.agent}
+                        </span>
+                        <span
+                          className={`rounded-md px-1.5 py-0.5 text-3xs font-bold ${
+                            run.status === "ok" ? "bg-fp-soft text-fp" : "bg-bp-soft text-bp"
+                          }`}
+                        >
+                          {run.status}
+                        </span>
+                      </div>
+                    </button>
+                    <div className="flex items-center gap-3 px-3 pb-2.5 pl-9 text-3xs text-faint">
+                      <span className="mono">{run.latency_ms}ms</span>
+                      {run.prompt_tokens + run.completion_tokens > 0 && (
+                        <span className="mono">{run.prompt_tokens + run.completion_tokens}t</span>
+                      )}
+                      {run.cached && <span className="text-info">cached</span>}
+                      <span className="ml-auto">
+                        <Hash value={run.output_hash} chars={10} />
+                      </span>
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
           </Card>
 
-          {result.remediation && (
-            <Card
-              title="Recommended action"
-              subtitle="Simulated. Nothing in this system touches a real device or account."
-              right={<Badge tone={result.remediation.action_risk}>{result.remediation.action_risk} risk</Badge>}
-            >
-              <p className="mono text-sm font-semibold text-ink-100">
-                {result.remediation.recommended_action}
-              </p>
-              <p className="mt-1.5 text-xs leading-relaxed text-ink-400">
-                {result.remediation.justification}
-              </p>
-              <p className="mt-2 text-[11px] text-ink-600">
-                <span className="text-ink-400">Rollback:</span> {result.remediation.rollback_plan}
-              </p>
-            </Card>
-          )}
+          <div className="min-w-0 space-y-4">
+            {stages.map(({ run, index, trace }) => (
+              <AgentStageCard
+                key={index}
+                run={run}
+                runIndex={index}
+                trace={trace}
+                result={result}
+                focused={focused === index}
+              />
+            ))}
+          </div>
         </div>
       )}
 
-      {result?.verifier && (
-        <Card
-          title="Independent verifier"
-          subtitle="Structural checks run in code on every backend; the model's judgement is layered on top and cannot overturn them."
-          right={
-            <Badge tone={result.verifier.verdict}>{result.verifier.verdict.toUpperCase()}</Badge>
-          }
-        >
-          {result.verifier.contradictions.length > 0 && (
-            <ul className="mb-3 space-y-1">
-              {result.verifier.contradictions.map((c, i) => (
-                <li key={i} className="rounded border border-tp/25 bg-tp/10 px-2 py-1 text-xs text-tp">
-                  {c}
-                </li>
-              ))}
-            </ul>
-          )}
-          <ul className="divide-y divide-ink-850">
-            {result.verifier.policy_checks.map((c, i) => (
-              <CheckRow key={`${c.policy_id}-${i}`} check={c} />
-            ))}
-          </ul>
-        </Card>
-      )}
-
+      {/* Scene 4. Full width, because "a human has to sign this" is a statement about the system,
+          not a detail of one agent's output. */}
       {result?.gate && (
         <Card
           title="Policy gate"
@@ -286,217 +383,105 @@ export function Workflow({
             </Badge>
           }
         >
-          <ul className="divide-y divide-ink-850">
-            {result.gate.checks.map((c, i) => (
-              <CheckRow key={`${c.policy_id}-${i}`} check={c} />
-            ))}
-          </ul>
-
-          {result.gate.reasons.length > 0 && (
-            <ul className="mt-2 space-y-1">
-              {result.gate.reasons.map((r, i) => (
-                <li key={i} className="text-xs text-bp">
-                  → {r}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {result.decision_id && (
-            <div className="mt-4 rounded border border-ink-800 bg-ink-850 p-3">
-              <div className="flex flex-wrap items-end gap-2">
-                <label className="flex-1">
-                  <span className="block text-[11px] uppercase tracking-wide text-ink-400">
-                    Analyst
-                  </span>
-                  <input
-                    value={analyst}
-                    onChange={(e) => setAnalyst(e.target.value)}
-                    className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-2 py-1 text-xs text-ink-200 focus:border-accent focus:outline-none"
-                  />
-                </label>
-                <label className="flex-[2]">
-                  <span className="block text-[11px] uppercase tracking-wide text-ink-400">
-                    Comment
-                  </span>
-                  <input
-                    value={comment}
-                    onChange={(e) => setComment(e.target.value)}
-                    placeholder="Recorded off-chain; only its hash is anchored"
-                    className="mt-1 w-full rounded border border-ink-700 bg-ink-900 px-2 py-1 text-xs text-ink-200 placeholder:text-ink-600 focus:border-accent focus:outline-none"
-                  />
-                </label>
-              </div>
-
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  disabled={!!busy || !analyst}
-                  onClick={() => act("anchor", () => api.anchor(result.decision_id))}
-                  className="rounded border border-ink-600 px-3 py-1.5 text-xs font-medium text-ink-200 hover:bg-ink-800 disabled:opacity-40"
-                >
-                  {busy === "anchor" ? "Anchoring…" : "Anchor proof on chain"}
-                </button>
-                <button
-                  disabled={!!busy || !analyst}
-                  onClick={() =>
-                    act("approve", () => api.approve(result.decision_id, true, analyst, comment))
-                  }
-                  className="rounded bg-fp/90 px-3 py-1.5 text-xs font-semibold text-ink-950 hover:bg-fp disabled:opacity-40"
-                >
-                  {busy === "approve" ? "Approving…" : "Approve"}
-                </button>
-                <button
-                  disabled={!!busy || !analyst}
-                  onClick={() =>
-                    act("reject", () => api.approve(result.decision_id, false, analyst, comment))
-                  }
-                  className="rounded bg-tp/90 px-3 py-1.5 text-xs font-semibold text-ink-950 hover:bg-tp disabled:opacity-40"
-                >
-                  {busy === "reject" ? "Rejecting…" : "Reject"}
-                </button>
-                <button
-                  disabled={!!busy}
-                  onClick={() => actIntegrity("verify", () => api.verify(result.decision_id))}
-                  className="rounded border border-ink-600 px-3 py-1.5 text-xs font-medium text-ink-200 hover:bg-ink-800 disabled:opacity-40"
-                >
-                  {busy === "verify" ? "Verifying…" : "Verify"}
-                </button>
-              </div>
-            </div>
-          )}
-        </Card>
-      )}
-
-      {result && (
-        <Card
-          title="Decision integrity"
-          subtitle="Digests are recomputed from the stored agent outputs and evidence rows, then compared with what was anchored. Nothing here reads back a saved hash column."
-          right={
-            integrity?.valid === true ? (
-              <Badge tone="low">VALID</Badge>
-            ) : integrity?.valid === false ? (
-              <Badge tone="high">TAMPERED</Badge>
-            ) : null
-          }
-        >
-          {/* Recomputed beside anchored. When they differ the two rows disagree on screen, which
-              is the whole point — a single "invalid" badge asks the audience to take it on faith. */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="text-ink-400">
-                <tr>
-                  <th className="pb-1 text-left font-medium"></th>
-                  <th className="pb-1 text-left font-medium">Anchored on chain</th>
-                  <th className="pb-1 text-left font-medium">Recomputed from stored data</th>
-                </tr>
-              </thead>
-              <tbody className="align-top">
-                <tr>
-                  <td className="pr-3 text-ink-400">Evidence</td>
-                  <td className="pr-3">
-                    <Hash value={integrity?.anchored_evidence_hash || result.evidence_hash} chars={22} />
-                  </td>
-                  <td className={integrity?.evidence_valid === false ? "text-tp" : ""}>
-                    <Hash value={integrity?.recomputed_evidence_hash || result.evidence_hash} chars={22} />
-                  </td>
-                </tr>
-                <tr>
-                  <td className="pr-3 text-ink-400">Agent output</td>
-                  <td className="pr-3">
-                    <Hash value={integrity?.anchored_output_hash || result.output_hash} chars={22} />
-                  </td>
-                  <td className={integrity?.output_valid === false ? "text-tp" : ""}>
-                    <Hash value={integrity?.recomputed_output_hash || result.output_hash} chars={22} />
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat
+              label="Action risk"
+              value={result.gate.action_risk || "—"}
+              tone={result.gate.action_risk === "low" ? "good" : "warn"}
+            />
+            <Stat
+              label="Auto-approved"
+              value={result.gate.auto_approved ? "yes" : "no"}
+              tone={result.gate.auto_approved ? "good" : undefined}
+            />
+            <Stat label="Checks" value={result.gate.checks.length} />
+            <Stat
+              label="Failed"
+              value={result.gate.checks.filter((c) => !c.passed).length}
+              tone={result.gate.checks.some((c) => !c.passed) ? "warn" : "good"}
+            />
           </div>
 
-          {integrity?.valid === false && (
-            <p className="mt-3 rounded border border-tp/40 bg-tp/10 px-3 py-2 text-xs text-tp">
-              The stored {integrity.tampered.join(" and ")} no longer hashes to the anchored proof.
-              Nothing on chain was touched — the record was altered underneath it, and that is
-              detectable precisely because the operator of this database does not control the
-              digest.
-            </p>
-          )}
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div className="min-w-0">
+              <ul className="divide-y divide-line">
+                {result.gate.checks.map((c, i) => (
+                  <CheckRow key={`${c.policy_id}-${i}`} check={c} />
+                ))}
+              </ul>
+              {result.gate.reasons.length > 0 && (
+                <ul className="mt-3 space-y-1">
+                  {result.gate.reasons.map((r, i) => (
+                    <li key={i} className="text-xs font-medium text-bp">
+                      → {r}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
-          {/* Scene 5 of the demo arc. Editing the database is the attack; the point is that it
-              cannot be done quietly. */}
-          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink-800 pt-3">
-            <span className="text-xs text-ink-400">Tamper demo:</span>
-            <button
-              disabled={!!busy || !result.decision_id}
-              onClick={() =>
-                actIntegrity("tamper", async () => (await api.tamper(result.decision_id, "triage")).integrity)
-              }
-              className="rounded border border-tp/60 px-3 py-1.5 text-xs font-semibold text-tp hover:bg-tp/10 disabled:opacity-40"
-            >
-              {busy === "tamper" ? "Editing…" : "Edit the stored triage label"}
-            </button>
-            <button
-              disabled={!!busy || !result.decision_id}
-              onClick={() =>
-                actIntegrity("restore", async () => (await api.restore(result.decision_id)).integrity)
-              }
-              className="rounded border border-ink-600 px-3 py-1.5 text-xs font-medium text-ink-200 hover:bg-ink-800 disabled:opacity-40"
-            >
-              {busy === "restore" ? "Restoring…" : "Restore"}
-            </button>
-            {integrity?.tamper_active && (
-              <Badge tone="high">record altered</Badge>
+            {result.decision_id && (
+              <div className="min-w-0 rounded-xl bg-raised p-4">
+                {approved !== null ? (
+                  <Note tone={approved ? "info" : "warn"}>
+                    Recorded as <strong>{approved ? "approved" : "rejected"}</strong> by{" "}
+                    <span className="mono">{analyst}</span>. The comment stays in the application
+                    database; only its hash can be anchored. Open the <strong>Proof</strong> tab to
+                    anchor and verify.
+                  </Note>
+                ) : (
+                  <>
+                    <div className="space-y-2.5">
+                      <label className="block">
+                        <span className="block text-2xs font-medium uppercase tracking-wider text-faint">
+                          Analyst
+                        </span>
+                        <TextInput value={analyst} onChange={setAnalyst} className="mt-1 w-full" />
+                      </label>
+                      <label className="block">
+                        <span className="block text-2xs font-medium uppercase tracking-wider text-faint">
+                          Comment
+                        </span>
+                        <TextInput
+                          value={comment}
+                          onChange={setComment}
+                          placeholder="Recorded off-chain; only its hash is anchored"
+                          className="mt-1 w-full"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        variant="primary"
+                        disabled={!!busy || !analyst}
+                        onClick={() => decide(true)}
+                      >
+                        {busy === "approve" ? "Approving…" : "Approve"}
+                      </Button>
+                      <Button variant="danger" disabled={!!busy || !analyst} onClick={() => decide(false)}>
+                        {busy === "reject" ? "Rejecting…" : "Reject"}
+                      </Button>
+                    </div>
+                    <p className="mt-2.5 text-2xs leading-relaxed text-faint">
+                      The approver is the transaction sender, not a name in a payload — a signature
+                      rather than an assertion.
+                    </p>
+                  </>
+                )}
+              </div>
             )}
           </div>
-
-          {integrity && (
-            <div className="mt-3 border-t border-ink-800 pt-3">
-              {!integrity.chain_available ? (
-                <p className="text-xs text-bp">
-                  No chain reachable — comparing against the locally recorded proof instead.
-                  The workflow, the gate and the digests are unaffected; only the independent
-                  confirmation is missing.
-                </p>
-              ) : (
-                <dl className="space-y-1.5 text-xs">
-                  <div className="flex gap-3">
-                    <dt className="w-32 text-ink-400">Transaction</dt>
-                    <dd>
-                      {integrity.tx_hash ? (
-                        <a
-                          href={`https://sepolia.etherscan.io/tx/${integrity.tx_hash}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mono text-accent hover:underline"
-                        >
-                          {integrity.tx_hash.slice(0, 24)}…
-                        </a>
-                      ) : (
-                        <span className="text-ink-500">not anchored</span>
-                      )}
-                    </dd>
-                  </div>
-                  <div className="flex gap-3">
-                    <dt className="w-32 text-ink-400">On-chain decision</dt>
-                    <dd className="text-ink-300">#{integrity.onchain_decision_id ?? "—"}</dd>
-                  </div>
-                  <div className="flex gap-3">
-                    <dt className="w-32 text-ink-400">Contract says</dt>
-                    <dd className={integrity.onchain_valid === false ? "text-tp" : "text-ink-300"}>
-                      {integrity.onchain_valid === null
-                        ? "—"
-                        : integrity.onchain_valid
-                          ? "digests match"
-                          : "digests DO NOT match"}
-                    </dd>
-                  </div>
-                </dl>
-              )}
-              <p className="mt-2 text-xs text-ink-500">{integrity.detail}</p>
-            </div>
-          )}
         </Card>
       )}
+    </div>
+  );
+}
+
+function Meta({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-3xs uppercase tracking-wider text-faint">{label}</dt>
+      <dd className="mt-0.5 truncate">{children}</dd>
     </div>
   );
 }

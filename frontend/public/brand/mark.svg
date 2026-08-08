@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  AgentSphere mark, extracted from the supplied Print_Transparent.svg.
+
+  The source is a 1280x1024 lockup with the mark stacked above the wordmark. The path data is
+  reproduced byte for byte; only the viewBox changes, cropped to the mark's computed bounding box
+  (x 483..797, y 263..568) so it can sit in a header at any height without the wordmark's dead
+  space around it. Re-cropping rather than redrawing keeps this identical to the brand artwork.
+
+  Gold is rgb(220,179,96) = #DCB360. It is 8.8:1 on the near-black header band and only 1.97:1 on
+  white, which is why the mark lives on dark surfaces throughout the app.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="481 261 318 309" width="318" height="309" role="img" aria-label="AgentSphere">
+  <g transform="matrix(1.9211538461538462 0 0 1.9211538461538462 640 415.2851170111211)">
+    <g>
+      <g transform="matrix(0.8344897203358166 0 0 -0.8344897203358166 -39.23562042588918 44.42214093572042)">
+        <path fill="rgb(220,179,96)" fill-rule="nonzero" transform="translate(-50.8675, 41.747)" d="M 0 0 L 0 -26.369 L 101.735 -83.494 L 101.735 -57.123999999999995 z" />
+      </g>
+      <g transform="matrix(0.8344897203358166 0 0 -0.8344897203358166 0 -11.385110152485623)">
+        <path fill="rgb(220,179,96)" fill-rule="nonzero" transform="translate(97.885, -6.788500000000013)" d="M 0 0 L 0 88.125 L -75.507 88.125 L -33.934000000000005 65.132 L -22.993000000000002 65.132 L -22.993000000000002 38.845 L -112.78999999999999 88.125 L -195.76999999999998 88.125 L -195.76999999999998 55.576 L -42.171 -27.849 L -55.133 -45.835 L -195.77 29.485 L -195.77 3.403 L -50.22 -74.54799999999999 L -8.68 -19.873999999999988 L -165.19 65.132 L -118.684 65.132 z" />
+      </g>
+    </g>
+  </g>
+</svg>

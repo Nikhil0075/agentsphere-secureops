@@ -1,28 +1,189 @@
 @import "tailwindcss";
 
 /*
- * A SOC console is looked at for hours in a dark room, so the palette is dark by default with a
- * restrained accent set. Severity colour is the only saturated thing on screen: if everything is
- * coloured, nothing reads as urgent.
+ * Self-hosted, not CDN.
+ *
+ * The whole project assumes the venue network may be unavailable, and that applies to fonts: a
+ * Google Fonts link would block or fall back at first paint exactly when the demo can least afford
+ * it. These two variable files are vendored into public/fonts from @fontsource-variable at build
+ * time and total ~88 kB for the full 100–900 weight range.
+ *
+ * `font-display: swap` means text paints immediately in the system stack and re-renders when the
+ * file lands, so a missing or slow font costs a reflow rather than a blank screen. The stacks in
+ * `--font-sans` / `--font-mono` fall through to exactly what shipped before these existed, and the
+ * typographic treatment lives in the type-scale tokens rather than in the font files — so if these
+ * two files ever go missing the layout is unchanged and only the letterforms differ.
+ */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin-var.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F,
+    U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono Variable";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin-var.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F,
+    U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
+ * AgentSphere SecureOps — light workspace, dark brand band.
+ *
+ * Tokens are named by ROLE, not by lightness. The previous ramp ran ink-950 (darkest) to ink-200
+ * (lightest); inverting those values for a light theme would have left `ink-950` meaning "white",
+ * which is a trap for whoever edits this next. Roles survive a theme change; brightness names do
+ * not.
+ *
+ * ## Why the brand gold is not the UI colour
+ *
+ * The AgentSphere gold is #DCB360, taken from the supplied artwork. Measured against white it is
+ * 1.97:1 — WCAG wants 4.5:1 for text and 3:1 for controls, so gold buttons or links on a light
+ * page would be genuinely hard to read on a projector. Against the header band it is 8.8:1, which
+ * is why the logo was drawn gold-on-black in the first place.
+ *
+ * So: gold lives on --color-header and nowhere else. Deep navy carries every interaction. That is
+ * also the logo's own system — ink and gold — rather than a third palette bolted on.
+ *
+ * ## Why severity is still the loudest thing
+ *
+ * Carried over from the dark theme, and still true: if everything is coloured, nothing reads as
+ * urgent. Brand gold is confined to the header, navy is structural, and TP/BP/FP are the only
+ * saturated colours in the working area. Their dark-theme values failed contrast on white, so they
+ * are re-tuned here rather than reused — each as a text/tint/border triple.
  */
 @theme {
-  --color-ink-950: #0a0d14;
-  --color-ink-900: #0f1420;
-  --color-ink-850: #141a28;
-  --color-ink-800: #1a2233;
-  --color-ink-700: #253044;
-  --color-ink-600: #35435c;
-  --color-ink-400: #7b8ba6;
-  --color-ink-300: #a3b1c6;
-  --color-ink-200: #cbd5e3;
+  /* --- surfaces ------------------------------------------------------------------------
+     Cards are white, carry no shadow, and sit on a tinted canvas — the tint IS the
+     separation. That is why the canvas darkens from #f6f7f9: once the shadows come off, a
+     white card on a near-white page has nothing to sit against. */
+  --color-canvas: #eef2f5;
+  --color-surface: #ffffff;
+  --color-raised: #e4ebf2;
+  --color-header: #101421;
+  --color-header-line: #232838;
 
-  --color-accent: #4d9fff;
-  --color-accent-dim: #2a6fc4;
+  /* --- structure -----------------------------------------------------------------------
+     Hairlines, not rules. These now carry the separation the shadows used to. */
+  --color-line: #dbe5ed;
+  --color-line-strong: #cfd7e7;
 
-  --color-tp: #f4525f;
-  --color-bp: #f0a52e;
-  --color-fp: #3fb968;
-  --color-neutral: #6b7a92;
+  /* --- type ----------------------------------------------------------------------------
+     Navy ink rather than black. Contrast measured against BOTH white and the new canvas,
+     because `faint` carries 9-11px uppercase labels and 4.5:1 on one surface is not enough:
+       text  #131c42  16.6:1 on white · 14.7:1 on canvas
+       muted #46527f   7.5:1 on white ·  6.6:1 on canvas
+       faint #586490   5.8:1 on white ·  5.1:1 on canvas */
+  --color-text: #131c42;
+  --color-muted: #46527f;
+  --color-faint: #586490;
+
+  /* brand — dark surfaces only, see the note above */
+  --color-brand: #dcb360;
+  --color-brand-dim: #b8924a;
+
+  /* interaction — 12.7:1 on white */
+  --color-primary: #172b76;
+  --color-primary-hover: #101f5c;
+  --color-primary-soft: #eaeef9;
+  --color-primary-line: #c3cdea;
+
+  /* --- severity — the only saturated colours in the workspace --------------------------
+     Deliberately UNCHANGED. These were tuned against white for WCAG, and re-tuning them
+     would be a second, unrelated risk riding on a restyle. They stay the loudest thing on
+     screen, which is the whole point of confining every other colour. */
+  --color-tp: #b42318;
+  --color-tp-soft: #fef3f2;
+  --color-tp-line: #fecdca;
+
+  --color-bp: #b54708;
+  --color-bp-soft: #fffaeb;
+  --color-bp-line: #fedf89;
+
+  --color-fp: #027a48;
+  --color-fp-soft: #ecfdf3;
+  --color-fp-line: #a6f4c5;
+
+  --color-info: #175cd3;
+  --color-info-soft: #eff8ff;
+  --color-info-line: #b2ddff;
+
+  /* --- radii ---------------------------------------------------------------------------
+     Two values only. Rather than rewrite 68 radius classes across 21 files, the built-in
+     scale is redefined onto them: every existing rounded-md/lg/xl lands on 7px and every
+     rounded-2xl/3xl on 10px, with no .tsx edit at all. `rounded-full` is untouched, so
+     badges stay pills. The named aliases are for new code. */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 7px;
+  --radius-xl: 7px;
+  --radius-2xl: 10px;
+  --radius-3xl: 10px;
+  --radius-4xl: 10px;
+  --radius-card: 7px;
+  --radius-panel: 10px;
+
+  /* --- fonts ---------------------------------------------------------------------------
+     Webfont names sit in FRONT of the previous system stack. If the woff2 files are ever
+     missing — an unpacked checkout, a stripped build — this degrades to exactly what
+     shipped before and nothing breaks. The typographic treatment below lives in tokens,
+     not in the font files, so it survives that fallback intact. */
+  --font-sans:
+    "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono",
+    Menlo, Consolas, monospace;
+  --default-font-family: var(--font-sans);
+
+  /* --- type scale ----------------------------------------------------------------------
+     Four tokens that retire all 129 arbitrary text sizes. Line-heights are absolute rather
+     than unitless so a 10px label and an 11px label in the same flex row share a baseline. */
+  --text-4xs: 0.5625rem; /* 9px */
+  --text-4xs--line-height: 0.75rem;
+  --text-4xs--letter-spacing: 0.02em;
+
+  --text-3xs: 0.625rem; /* 10px */
+  --text-3xs--line-height: 0.875rem;
+  --text-3xs--letter-spacing: 0.015em;
+
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-2xs--line-height: 0.9375rem;
+  --text-2xs--letter-spacing: 0.01em;
+
+  --text-code: 0.8125rem; /* 13px, the mono heading voice */
+  --text-code--line-height: 1.0625rem;
+  --text-code--letter-spacing: -0.025em;
+
+  /* Built-in sizes keep their px values; only their metrics are re-cut toward a 1.35
+     line-height and the slight positive tracking that makes small UI text settle. */
+  --text-xs--line-height: 1.0625rem;
+  --text-sm--line-height: 1.25rem;
+  --text-sm--letter-spacing: 0.005em;
+  --text-base--line-height: 1.4375rem;
+  --text-base--letter-spacing: 0.01em;
+  --text-lg--line-height: 1.5rem;
+
+  /* --- display -------------------------------------------------------------------------
+     Large, LIGHT and tightly tracked. Weight 300 needs size to work: at 32px it reads as
+     considered, much below that it reads as washed out. Do not shrink these. */
+  --text-display-sm: 2rem; /* 32px */
+  --text-display-sm--line-height: 1.05;
+  --text-display-sm--letter-spacing: -0.025em;
+  --text-display-sm--font-weight: 300;
+
+  --text-display: 2.75rem; /* 44px */
+  --text-display--line-height: 1;
+  --text-display--letter-spacing: -0.025em;
+  --text-display--font-weight: 300;
 }
 
 html,
@@ -32,17 +193,55 @@ body,
 }
 
 body {
-  background: var(--color-ink-950);
-  color: var(--color-ink-200);
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  /* Tabular figures so a metric does not jitter as it updates mid-demo. */
   font-feature-settings: "tnum" 1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+summary,
+[role="button"],
+[tabindex] {
+  outline: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* The wordmark. Set as live text rather than an image so it stays crisp at any size.
+   Size and tracking are declared HERE rather than as utilities: the type scale gives every size
+   a negative tracking, and a brand lockup wants the opposite. Setting both together stops a
+   utility and this rule fighting over letter-spacing. */
+.wordmark {
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  letter-spacing: 0.18em;
+  font-weight: 600;
+}
+.wordmark-sub {
+  font-size: 0.5625rem;
+  letter-spacing: 0.34em;
+  font-weight: 500;
 }
 
 /* Hashes, ids and addresses are compared by eye during a demo; they need to be monospaced and
    they must not reflow mid-comparison. */
 .mono {
-  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-variant-ligatures: none;
 }
 
@@ -51,27 +250,120 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-ink-900);
+  background: var(--color-canvas);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-ink-700);
+  background: var(--color-line-strong);
   border-radius: 5px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-ink-600);
+  background: var(--color-faint);
 }
 
 @keyframes pulse-ring {
   0% {
-    box-shadow: 0 0 0 0 rgb(77 159 255 / 0.4);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 35%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 8px rgb(77 159 255 / 0);
+    box-shadow: 0 0 0 8px transparent;
   }
   100% {
-    box-shadow: 0 0 0 0 rgb(77 159 255 / 0);
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 .running {
   animation: pulse-ring 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* No card shadows.
+ *
+ * `.card-shadow` and `.card-shadow-lg` are gone deliberately. Separation now comes from a hairline
+ * against a tinted canvas, which is both the reference's language and measurably cheaper to paint:
+ * a border is one pass, a two-layer box-shadow is a blur per layer on every scroll and hover. The
+ * one place a shadow survives is the Popover, where the panel genuinely floats above content and
+ * needs to read that way.
+ */
+.floating-panel {
+  box-shadow: 0 10px 30px -12px color-mix(in srgb, var(--color-text) 28%, transparent);
+}
+
+/* 110ms, opacity only. The old 170ms translate moved the whole page on every tab change, which
+   reads as lag however fast the data arrives. */
+.page-enter {
+  animation: page-enter 110ms ease-out both;
+}
+
+/* Flat. The gradient and the drop shadow both went: on a tinted canvas the panel already reads as
+   a distinct surface, and the gradient fought the display type sitting on top of it. */
+.page-intro {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+}
+
+/* Border colour only — no transform. `translateY(-1px)` on hover forces a composite of the row and
+   everything under it; a border-colour change is a single cheap repaint. */
+.interactive-card {
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.interactive-card:hover {
+  border-color: var(--color-primary-line);
+}
+
+.skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-raised) 0%,
+    var(--color-surface) 50%,
+    var(--color-raised) 100%
+  );
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.queue-select {
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  padding: 0.375rem 0.625rem;
+  color: var(--color-text);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.queue-select:focus {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 15%, transparent);
 }

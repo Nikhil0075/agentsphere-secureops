@@ -9,6 +9,23 @@
 export type TriageLabel = "TruePositive" | "BenignPositive" | "FalsePositive";
 export type RiskLevel = "low" | "medium" | "high";
 export type Verdict = "accept" | "reject" | "escalate";
+export type ExecutionMode = "replay" | "live" | "deterministic";
+export type QueueSort =
+  | "risk"
+  | "first_seen"
+  | "alerts"
+  | "evidence"
+  | "baseline_confidence"
+  | "incident"
+  | "demo_rank";
+
+/** State of the six-case presentation arc. Presentation only — never a metric denominator. */
+export interface DemoArcInfo {
+  size: number;
+  expected: number;
+  complete: boolean;
+  roles: string[];
+}
 
 export interface DatasetInfo {
   source: string;
@@ -16,9 +33,14 @@ export interface DatasetInfo {
   evidence_rows: number;
   labels: Record<string, number>;
   splits: Record<string, number>;
+  showcase_incidents: number;
+  demo_arc: DemoArcInfo;
   sentinels_masked: string[];
   index_available: boolean;
   llm_backend: string;
+  execution_mode: ExecutionMode;
+  model_profile: Record<string, string>;
+  replay_entries: number;
   witfoo: Record<string, any>;
   chain: {
     available: boolean;
@@ -45,6 +67,9 @@ export interface IncidentSummary {
   mitre_techniques: string;
   first_seen: string;
   is_showcase: boolean;
+  /** Position in the six-case narration order, or null for every other incident. */
+  demo_rank: number | null;
+  demo_role: string;
   baseline_label: string;
   baseline_confidence: number;
 }
@@ -54,6 +79,16 @@ export interface IncidentDetail extends IncidentSummary {
   entity_counts: Record<string, number>;
   threat_families: string;
   duration_minutes: number;
+}
+
+export interface IncidentPage {
+  items: IncidentSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+  sort_by: QueueSort;
+  sort_dir: "asc" | "desc";
+  facets: { categories: string[]; suspicions: string[] };
 }
 
 export interface EvidenceRow {
@@ -93,6 +128,27 @@ export interface GraphInfo {
   edge_count: number;
 }
 
+/**
+ * What an agent was actually asked, and what it was allowed to see.
+ *
+ * `label_free` covers the rendered user prompt only. Triage's role names the three labels because
+ * it is choosing between them; that static text is identical for every incident and cannot carry
+ * an answer.
+ */
+export interface AgentTrace {
+  run_index: number;
+  agent: string;
+  sequence: number;
+  status: string;
+  system_prompt: string;
+  user_prompt: string;
+  context_json: string;
+  context_keys: string[];
+  truncated: boolean;
+  pre_decision: boolean;
+  label_free: boolean;
+}
+
 export interface PolicyCheck {
   policy_id: string;
   passed: boolean;
@@ -109,6 +165,8 @@ export interface AgentRun {
   model: string;
   prompt_tokens: number;
   completion_tokens: number;
+  cached: boolean;
+  trace_id: string;
   validation_error: string;
   output_hash: string;
 }
@@ -184,7 +242,64 @@ export interface WorkflowResponse {
   evidence_hash: string;
   output_hash: string;
   total_latency_ms: number;
+  /** One entry per agent run, in run order. Joined to `runs` on `run_index`. */
+  traces: AgentTrace[];
   degraded_agents: string[];
+  /** Succeeded only on a retry — an identical prompt re-sent, so on a live model, a resample. */
+  resampled_agents: string[];
+  /** The live-only triage correction pass ran: nine agent runs, and a hash its replay cannot match. */
+  revision_fired: boolean;
+  execution_mode: ExecutionMode;
+  model_profile: Record<string, string>;
+  cache_status: "hit" | "miss_filled" | "bypassed" | "degraded";
+  trace_id: string;
+  token_usage: { input: number; output: number; total: number };
+  retry_count: number;
+}
+
+/**
+ * The `DecisionProof.Decision` struct, field for field.
+ *
+ * Named to match the Solidity so the UI can present it as "this is literally what is on chain".
+ * Note what is absent: no evidence rows, no prompts, no rationale.
+ */
+export interface OnchainDecision {
+  incident_id: string;
+  evidence_hash: string;
+  output_hash: string;
+  label: string;
+  risk: string;
+  state: string;
+  agent: string;
+  approver: string;
+  comment_hash: string;
+  submitted_at: number;
+  decided_at: number;
+  finalized_at: number;
+}
+
+/** One row of `blockchain_proofs`. Plural because a retry records another attempt. */
+export interface AnchorAttempt {
+  proof_id: string;
+  tx_hash: string;
+  block_number: number | null;
+  gas_used: number | null;
+  agent_address: string;
+  onchain_state: string;
+  anchored_at: string;
+}
+
+/**
+ * The human decision as recorded in SQLite, before anything reaches the chain.
+ *
+ * Distinct from `OnchainDecision.approver`: this is what the analyst did, that is what the contract
+ * witnessed, and until an anchor succeeds only the first one exists.
+ */
+export interface LocalApproval {
+  approver: string;
+  approved: boolean;
+  comment_hash: string;
+  recorded_at: string;
 }
 
 export interface ProofInfo {
@@ -195,13 +310,24 @@ export interface ProofInfo {
   output_hash: string;
   tx_hash: string;
   block_number: number | null;
+  gas_used: number | null;
   chain_id: number | null;
   contract_address: string;
+  registry_address: string;
+  network: string;
+  agent_address: string;
+  registered_agents: Record<string, string>;
   onchain_decision_id: number | null;
   onchain_state: string;
   explorer_url: string;
   valid: boolean | null;
   chain_available: boolean;
+  /** False when the response was assembled without an RPC — "we did not ask", not "it said no". */
+  chain_checked: boolean;
+  onchain: OnchainDecision | null;
+  attempts: AnchorAttempt[];
+  /** The locally recorded human decision, if one has been made yet. */
+  approval: LocalApproval | null;
   reason: string;
 }
 
@@ -289,13 +415,26 @@ export interface ProvenanceGraph {
   edge_records: number;
 }
 
+export interface ProofMetrics {
+  decisions: number;
+  anchored: number;
+  valid: number;
+  tampered: number;
+  validity_rate: number | null;
+  verification_scope: "local";
+}
+
 export interface MetricsResponse {
   witfoo: Record<string, any>;
-  proofs: Record<string, any>;
+  proofs: ProofMetrics;
   baseline: Record<string, any>;
   evaluation: Record<string, any>;
   graph: Record<string, any>;
   index: Record<string, any>;
+  /** Measured live run-to-run variance. `{}` until scripts/measure_variance.py has run. */
+  variance: Record<string, any>;
+  /** The end-to-end rehearsal sweep. `{}` until scripts/rehearse.py has run. */
+  rehearsal: Record<string, any>;
 }
 
 class ApiError extends Error {
@@ -341,9 +480,25 @@ export const api = {
     limit?: number;
     offset?: number;
     showcase_only?: boolean;
+    demo_only?: boolean;
     label?: string;
     search?: string;
   }) => request<IncidentSummary[]>(`/api/incidents${qs(params)}`),
+
+  queryIncidents: (params: {
+    limit?: number;
+    offset?: number;
+    showcase_only?: boolean;
+    demo_only?: boolean;
+    label?: string;
+    category?: string;
+    suspicion?: string;
+    min_risk?: number;
+    baseline_status?: string;
+    search?: string;
+    sort_by?: QueueSort;
+    sort_dir?: "asc" | "desc";
+  }) => request<IncidentPage>(`/api/incidents/query${qs(params)}`),
 
   incident: (id: string) => request<IncidentDetail>(`/api/incidents/${id}`),
 
@@ -356,10 +511,10 @@ export const api = {
   graph: (id: string, maxHops = 2) =>
     request<GraphInfo>(`/api/incidents/${id}/graph${qs({ max_hops: maxHops })}`),
 
-  runWorkflow: (incident_id: string, backend?: string) =>
+  runWorkflow: (incident_id: string, mode?: ExecutionMode) =>
     request<WorkflowResponse>("/api/workflows", {
       method: "POST",
-      body: JSON.stringify({ incident_id, backend, persist: true }),
+      body: JSON.stringify({ incident_id, mode, persist: true }),
     }),
 
   approve: (decisionId: string, approved: boolean, analyst: string, comment: string) =>
@@ -374,6 +529,13 @@ export const api = {
   verify: (decisionId: string) =>
     request<IntegrityInfo>(`/api/decisions/${decisionId}/verify`),
 
+  /**
+   * Everything known about the anchor. Zero-RPC unless `check_chain` is set — the Proof screen
+   * opens with this and only reaches the contract when the analyst explicitly asks.
+   */
+  proof: (decisionId: string, params: { check_chain?: boolean } = {}) =>
+    request<ProofInfo>(`/api/decisions/${decisionId}/proof${qs(params)}`),
+
   tamper: (decisionId: string, agent = "triage") =>
     request<TamperResult>(`/api/decisions/${decisionId}/tamper`, {
       method: "POST",
@@ -383,11 +545,25 @@ export const api = {
   restore: (decisionId: string) =>
     request<TamperResult>(`/api/decisions/${decisionId}/restore`, { method: "POST" }),
 
-  witfooIncidents: (params: { limit?: number; offset?: number; search?: string } = {}) =>
-    request<WitFooIncident[]>(`/api/witfoo/incidents${qs(params)}`),
+  witfooIncidents: (
+    params: {
+      limit?: number;
+      offset?: number;
+      search?: string;
+      mo_name?: string;
+      status?: string;
+      /** No threat-label option: every shipped incident is labelled malicious. */
+      sort?: "suspicion" | "suspicion_asc" | "nodes" | "recent";
+    } = {},
+  ) => request<WitFooIncident[]>(`/api/witfoo/incidents${qs(params)}`),
 
-  witfooGraph: (incidentId: string) =>
-    request<ProvenanceGraph>(`/api/witfoo/incidents/${incidentId}/graph`),
+  witfooGraph: (
+    incidentId: string,
+    params: { max_hops?: number; hub_degree?: number } = {},
+  ) =>
+    request<ProvenanceGraph>(
+      `/api/witfoo/incidents/${incidentId}/graph${qs(params)}`,
+    ),
 
   metrics: () => request<MetricsResponse>("/api/metrics"),
 };
