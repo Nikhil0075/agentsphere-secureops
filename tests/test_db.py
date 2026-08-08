@@ -29,6 +29,38 @@ def test_init_is_idempotent(tmp_path):
     assert EXPECTED_TABLES.issubset(set(db.table_names(path)))
 
 
+def _columns(path, table: str) -> set[str]:
+    with db.session(path) as conn:
+        return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def test_blockchain_proofs_carries_gas_used(tmp_path):
+    path = tmp_path / "test.db"
+    db.init_db(path)
+    assert "gas_used" in _columns(path, "blockchain_proofs")
+
+
+def test_a_database_predating_a_column_gains_it_on_init(tmp_path):
+    """`CREATE TABLE IF NOT EXISTS` does nothing to an existing table, so a new column in
+    schema.sql would never reach a laptop that already ran init_db. This is that gap, closed."""
+    path = tmp_path / "test.db"
+    db.init_db(path)
+    with db.session(path) as conn:
+        conn.execute("ALTER TABLE blockchain_proofs DROP COLUMN gas_used")
+    assert "gas_used" not in _columns(path, "blockchain_proofs")
+
+    db.init_db(path)
+    assert "gas_used" in _columns(path, "blockchain_proofs")
+
+
+def test_the_additive_migration_is_idempotent(tmp_path):
+    path = tmp_path / "test.db"
+    db.init_db(path)
+    db.init_db(path)
+    db.init_db(path)
+    assert "gas_used" in _columns(path, "blockchain_proofs")
+
+
 def test_load_dataset_round_trips(tmp_path, evidence, incident_table):
     path = tmp_path / "test.db"
     counts = db.load_dataset(incident_table, evidence, db_path=path)

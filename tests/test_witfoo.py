@@ -400,3 +400,59 @@ def test_an_empty_build_is_harmless():
     result = build(nodes={}, edges=iter([]))
     assert result.graph.node_count == 0
     assert result.stats()["incidents"] == 0
+
+
+# --- listing facets ------------------------------------------------------------------------------
+
+
+def _store(rows):
+    from app.services.provenance import ProvenanceStore
+
+    store = ProvenanceStore(incidents=rows)
+    store._index = {r["incident_id"]: r for r in rows}
+    return store
+
+
+_ROWS = [
+    {
+        "incident_id": "a", "mo_name": "Phishing", "status_name": "Disrupted",
+        "suspicion_score": 0.99, "node_count": 4, "last_observed_at": 10,
+        "threat_labels": {"malicious": 3},
+    },
+    {
+        "incident_id": "b", "mo_name": "Data Theft", "status_name": "Unprocessed",
+        "suspicion_score": 0.25, "node_count": 40, "last_observed_at": 99,
+        "threat_labels": {"malicious": 9},
+    },
+]
+
+
+def test_the_listing_can_be_ordered_by_something_other_than_suspicion():
+    """Fixed suspicion-descending ordering made the corpus look like one kind of incident.
+
+    The median shipped suspicion score is 0.250 against a maximum of 0.992, so the first page was
+    a run of near-identical 0.99s while most of the dataset sat at the floor, unreachable without
+    paging.
+    """
+    store = _store(_ROWS)
+    assert [r["incident_id"] for r in store.list_incidents(sort="suspicion")] == ["a", "b"]
+    assert [r["incident_id"] for r in store.list_incidents(sort="suspicion_asc")] == ["b", "a"]
+    assert store.list_incidents(sort="nodes")[0]["incident_id"] == "b"
+    assert store.list_incidents(sort="recent")[0]["incident_id"] == "b"
+
+
+def test_the_listing_filters_on_the_facets_that_vary():
+    store = _store(_ROWS)
+    assert [r["incident_id"] for r in store.list_incidents(mo_name="Phishing")] == ["a"]
+    assert [r["incident_id"] for r in store.list_incidents(status="Unprocessed")] == ["b"]
+    assert store.list_incidents(mo_name="Phishing", status="Unprocessed") == []
+
+
+def test_the_threat_label_spread_is_counted_per_incident_not_per_edge():
+    """Why there is no threat-label filter, expressed as a measurement.
+
+    The edge-level label histogram can look varied while every *incident* still resolves to a
+    single label — which is the case on the shipped corpus: 9,552 of 9,552 are malicious. A
+    filter over one value is not a filter, so the UI states the fact instead of offering one.
+    """
+    assert _store(_ROWS).threat_label_spread() == {"malicious": 2}

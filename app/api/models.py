@@ -9,7 +9,11 @@ same source of truth the agents are validated against.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
+
+from app.agents.llm import normalize_mode
 
 from app.agents.schemas import (
     AgentRunRecord,
@@ -24,15 +28,34 @@ from app.agents.schemas import (
 )
 
 
+class DemoArcInfo(BaseModel):
+    """State of the six-case presentation arc, read from the dataset manifest.
+
+    Presentation only. No metric is ever computed over these six incidents — see
+    :mod:`app.data.demo_arc` for why the arc, the showcase pool and the ``demo`` split are three
+    different things.
+    """
+
+    size: int = 0
+    expected: int = 6
+    complete: bool = False
+    roles: list[str] = Field(default_factory=list)
+
+
 class DatasetInfo(BaseModel):
     source: str
     incidents: int
     evidence_rows: int
     labels: dict[str, int]
     splits: dict[str, int]
+    showcase_incidents: int = 0
+    demo_arc: DemoArcInfo = Field(default_factory=DemoArcInfo)
     sentinels_masked: list[str] = Field(default_factory=list)
     index_available: bool = False
     llm_backend: str = ""
+    execution_mode: Literal["replay", "live", "deterministic"] = "replay"
+    model_profile: dict[str, str] = Field(default_factory=dict)
+    replay_entries: int = 0
     chain: dict = Field(default_factory=dict)
     witfoo: dict = Field(default_factory=dict)
 
@@ -54,6 +77,10 @@ class IncidentSummary(BaseModel):
     mitre_techniques: str = ""
     first_seen: str = ""
     is_showcase: bool = False
+    #: Position in the six-case narration order, or None for the other 4,994 incidents. A row with
+    #: a rank is always also ``is_showcase``; the reverse does not hold.
+    demo_rank: int | None = None
+    demo_role: str = ""
     baseline_label: str = ""
     baseline_confidence: float = 0.0
 
@@ -63,6 +90,21 @@ class IncidentDetail(IncidentSummary):
     entity_counts: dict[str, int] = Field(default_factory=dict)
     threat_families: str = ""
     duration_minutes: float = 0.0
+
+
+class QueueFacets(BaseModel):
+    categories: list[str] = Field(default_factory=list)
+    suspicions: list[str] = Field(default_factory=list)
+
+
+class IncidentPage(BaseModel):
+    items: list[IncidentSummary] = Field(default_factory=list)
+    total: int
+    limit: int
+    offset: int
+    sort_by: str
+    sort_dir: Literal["asc", "desc"]
+    facets: QueueFacets = Field(default_factory=QueueFacets)
 
 
 class EvidenceRow(BaseModel):
@@ -131,10 +173,23 @@ class GateInfo(BaseModel):
 
 class WorkflowRequest(BaseModel):
     incident_id: str
+    mode: Literal["replay", "live", "deterministic"] | None = Field(
+        default=None, description="Preferred execution mode; defaults to LLM_BACKEND"
+    )
     backend: str | None = Field(
-        default=None, description="deterministic | openai | cache; defaults to LLM_BACKEND"
+        default=None,
+        description="Compatibility alias: deterministic | openai | cache",
     )
     persist: bool = True
+
+    @model_validator(mode="after")
+    def compatible_execution_mode(self):
+        if self.mode and self.backend and self.mode != normalize_mode(self.backend):
+            raise ValueError("mode and backend select different execution modes")
+        return self
+
+    def resolved_mode(self) -> str:
+        return normalize_mode(self.mode or self.backend)
 
 
 class WorkflowResponse(BaseModel):
@@ -161,13 +216,110 @@ class WorkflowResponse(BaseModel):
     evidence_hash: str = ""
     output_hash: str = ""
     total_latency_ms: int = 0
+    #: One entry per agent run, in run order. See :class:`AgentTrace`.
+    traces: list[AgentTrace] = Field(default_factory=list)
     degraded_agents: list[str] = Field(default_factory=list)
+    #: Agents that succeeded only on a retry. The retry re-sends an identical prompt, so on a
+    #: live model this is a resample: two runs of the same incident can diverge here without
+    #: either being degraded.
+    resampled_agents: list[str] = Field(default_factory=list)
+    #: True when the live-only triage correction pass ran. Such a run has nine agent runs and a
+    #: different output_hash than its replay, which has six.
+    revision_fired: bool = False
+    execution_mode: Literal["replay", "live", "deterministic"] = "deterministic"
+    model_profile: dict[str, str] = Field(default_factory=dict)
+    cache_status: Literal["hit", "miss_filled", "bypassed", "degraded"] = "bypassed"
+    trace_id: str = ""
+    token_usage: dict[str, int] = Field(default_factory=dict)
+    retry_count: int = 0
 
 
 class ApprovalRequest(BaseModel):
     approved: bool
     analyst: str = Field(min_length=1, max_length=120)
     comment: str = Field(default="", max_length=1000)
+
+
+class AgentTrace(BaseModel):
+    """What an agent was actually asked, and what it was allowed to see.
+
+    Carried on the API response rather than on ``AgentRunRecord``: that record renders into
+    ``artifacts/schemas/workflow_state.schema.json`` via ``scripts/freeze_schemas.py``, so a new
+    field there breaks ``tests/test_schemas_frozen.py``. The agent contracts are frozen; this model
+    is not, which makes it the right home.
+
+    ``label_free`` is the point of the whole thing. For a ``pre_decision`` agent it must be true —
+    that is invariant 2 made readable on screen rather than asserted in a docstring. Triage and
+    after are not pre-decision: they legitimately receive the baseline's *prediction*, which is a
+    model output rather than the ground-truth label.
+    """
+
+    run_index: int
+    agent: str
+    sequence: int = 0
+    status: str = ""
+    system_prompt: str = ""
+    user_prompt: str = ""
+    context_json: str = ""
+    context_keys: list[str] = Field(default_factory=list)
+    truncated: bool = False
+    pre_decision: bool = False
+    label_free: bool = True
+
+
+class OnchainDecision(BaseModel):
+    """The ``DecisionProof.Decision`` struct, field for field.
+
+    Named to match the Solidity so the UI can present it as "this is literally what is on chain"
+    rather than as a reformatted summary. Note what is *not* here: no evidence rows, no prompts,
+    no rationale. There is no function on the contract that could store them.
+    """
+
+    incident_id: str = ""
+    evidence_hash: str = ""
+    output_hash: str = ""
+    label: str = ""
+    risk: str = ""
+    state: str = ""
+    agent: str = ""
+    approver: str = ""
+    comment_hash: str = ""
+    submitted_at: int = 0
+    decided_at: int = 0
+    finalized_at: int = 0
+
+
+class AnchorAttempt(BaseModel):
+    """One row of ``blockchain_proofs``.
+
+    Plural because a retry after a network failure records another attempt rather than overwriting
+    the first — see the uuid4 note in ``anchor()``. Showing the attempts is honest about what
+    actually happened at the venue.
+    """
+
+    proof_id: str = ""
+    tx_hash: str = ""
+    block_number: int | None = None
+    gas_used: int | None = None
+    #: The chain's own words when the submission was refused. Empty on a successful anchor.
+    failure_reason: str = ""
+    agent_address: str = ""
+    onchain_state: str = ""
+    anchored_at: str = ""
+
+
+class LocalApproval(BaseModel):
+    """The human decision as recorded in SQLite, before anything reaches the chain.
+
+    Kept separate from ``OnchainDecision.approver`` on purpose: this is what the analyst did, the
+    other is what the contract witnessed, and until the anchor succeeds only the first exists. The
+    comment text stays here and never leaves — only ``comment_hash`` is anchorable.
+    """
+
+    approver: str = ""
+    approved: bool = False
+    comment_hash: str = ""
+    recorded_at: str = ""
 
 
 class ProofInfo(BaseModel):
@@ -178,13 +330,26 @@ class ProofInfo(BaseModel):
     output_hash: str = ""
     tx_hash: str = ""
     block_number: int | None = None
+    gas_used: int | None = None
     chain_id: int | None = None
     contract_address: str = ""
+    registry_address: str = ""
+    network: str = ""
+    agent_address: str = ""
+    #: Registered agent roles to addresses, read from the deployment record, not from the chain.
+    registered_agents: dict[str, str] = Field(default_factory=dict)
     onchain_decision_id: int | None = None
     onchain_state: str = ""
     explorer_url: str = ""
     valid: bool | None = None
     chain_available: bool = False
+    #: False when this response was assembled without touching an RPC. The Proof screen shows it
+    #: so "we did not ask the contract" is never mistaken for "the contract said no".
+    chain_checked: bool = False
+    onchain: OnchainDecision | None = None
+    attempts: list[AnchorAttempt] = Field(default_factory=list)
+    #: The locally recorded human decision, if one has been made yet.
+    approval: LocalApproval | None = None
     reason: str = ""
 
 
@@ -287,10 +452,25 @@ class ProvenanceGraph(BaseModel):
     edge_records: int = 0
 
 
+class ProofMetrics(BaseModel):
+    """Aggregate integrity results computed locally without contacting the chain."""
+
+    decisions: int = 0
+    anchored: int = 0
+    valid: int = 0
+    tampered: int = 0
+    validity_rate: float | None = None
+    verification_scope: str = "local"
+
+
 class MetricsResponse(BaseModel):
     baseline: dict = Field(default_factory=dict)
     evaluation: dict = Field(default_factory=dict)
     graph: dict = Field(default_factory=dict)
     index: dict = Field(default_factory=dict)
-    proofs: dict = Field(default_factory=dict)
+    proofs: ProofMetrics = Field(default_factory=ProofMetrics)
     witfoo: dict = Field(default_factory=dict)
+    #: Measured live run-to-run variance from scripts/measure_variance.py. Empty on a fresh clone.
+    variance: dict = Field(default_factory=dict)
+    #: The end-to-end rehearsal sweep from scripts/rehearse.py. Empty until it has been run.
+    rehearsal: dict = Field(default_factory=dict)

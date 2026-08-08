@@ -76,11 +76,37 @@ class ProvenanceStore:
     # --- queries ------------------------------------------------------------------------
 
     def list_incidents(
-        self, limit: int = 50, offset: int = 0, search: str = "", mo_name: str = ""
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        search: str = "",
+        mo_name: str = "",
+        status: str = "",
+        sort: str = "suspicion",
     ) -> list[dict]:
+        """Filter and order the shipped incidents.
+
+        Ordering was fixed at suspicion-descending, and the corpus makes that a trap: the median
+        suspicion score is 0.250 and the maximum 0.992, so the first page is a run of near-identical
+        0.99s and the list reads as though the dataset holds one kind of incident. It does not --
+        but the dimension that varies is *not* the threat label. Every one of the 9,552 shipped
+        incidents carries exactly one label and it is always ``malicious``, which is why no
+        threat-label filter exists here: it could only ever return everything or nothing.
+        What genuinely varies is the modus operandi, the processing status and the score itself.
+        """
         rows = self.incidents
         if mo_name:
             rows = [r for r in rows if r.get("mo_name") == mo_name]
+        if status:
+            rows = [r for r in rows if r.get("status_name") == status]
+        if sort == "suspicion_asc":
+            rows = sorted(rows, key=lambda r: float(r.get("suspicion_score") or 0.0))
+        elif sort == "nodes":
+            rows = sorted(rows, key=lambda r: int(r.get("node_count") or 0), reverse=True)
+        elif sort == "recent":
+            rows = sorted(rows, key=lambda r: int(r.get("last_observed_at") or 0), reverse=True)
+        elif sort == "suspicion":
+            rows = sorted(rows, key=lambda r: float(r.get("suspicion_score") or 0.0), reverse=True)
         if search:
             needle = search.lower()
             rows = [
@@ -97,6 +123,23 @@ class ProvenanceStore:
 
     def mo_names(self) -> list[str]:
         return sorted({r.get("mo_name", "") for r in self.incidents if r.get("mo_name")})
+
+    def status_names(self) -> list[str]:
+        return sorted({r.get("status_name", "") for r in self.incidents if r.get("status_name")})
+
+    def threat_label_spread(self) -> dict[str, int]:
+        """How many incidents contain each threat label. Reported, not assumed.
+
+        The answer on the shipped corpus is a single key -- see :meth:`list_incidents`. Surfacing
+        the count is what lets the UI say "every incident is labelled malicious" as a measured
+        fact rather than leaving the reader to conclude the filter is broken.
+        """
+        spread: dict[str, int] = {}
+        for row in self.incidents:
+            for label, count in (row.get("threat_labels") or {}).items():
+                if count:
+                    spread[label] = spread.get(label, 0) + 1
+        return dict(sorted(spread.items(), key=lambda kv: -kv[1]))
 
     def edges_for(self, incident_id: str) -> list[dict]:
         return self._by_incident.get(incident_id, [])
@@ -156,6 +199,11 @@ class ProvenanceStore:
             "node_accounting": self.stats.get("node_accounting", {}),
             "grounding": self.stats.get("grounding", {}),
             "threat_labels": self.stats.get("threat_labels", {}),
+            # Per-incident, not per-edge. The edge-level figure above can look varied while every
+            # single incident still resolves to one label -- which is exactly the case here.
+            "incidents_by_threat_label": self.threat_label_spread(),
+            "mo_names": self.mo_names(),
+            "status_names": self.status_names(),
             "edge_types": self.stats.get("edge_types", {}),
             "max_degree": self.stats.get("max_degree"),
             "signals": self.signal_metadata.get("total_records"),

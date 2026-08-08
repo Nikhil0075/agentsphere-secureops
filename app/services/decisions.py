@@ -184,12 +184,18 @@ def anchor_decision(
 
 
 def verify_decision(
-    conn: sqlite3.Connection, decision_id: str, client: ChainClient
+    conn: sqlite3.Connection, decision_id: str, client: ChainClient | None = None
 ) -> dict:
     """Recompute-and-compare against what was anchored.
 
     ``valid`` false with a chain available is the tamper signal: the stored record no longer
     hashes to what the chain recorded.
+
+    ``client`` may be ``None``, which means "answer from stored data alone and make no network
+    call". The caller gets `valid=None` and `chain_available=False`, which is exactly the state a
+    display route wants: everything known locally, and an honest "we did not ask" rather than a
+    fabricated verdict. Connecting to a chain is expensive enough that it must be a decision the
+    caller makes, not a side effect of rendering a page.
     """
     row = conn.execute(
         """
@@ -205,8 +211,9 @@ def verify_decision(
         return {"decision_id": decision_id, "found": False}
 
     evidence_hash, output_hash, tx_hash, chain_id, contract = row
+    available = bool(client is not None and client.available)
     onchain_id = None
-    if client.available:
+    if available:
         onchain_id = client._proof.functions.findByFingerprint(  # noqa: SLF001
             conn.execute(
                 "SELECT incident_id FROM decisions WHERE decision_id = ?", (decision_id,)
@@ -217,7 +224,7 @@ def verify_decision(
 
     valid = (
         client.verify(int(onchain_id), evidence_hash, output_hash)
-        if onchain_id
+        if onchain_id and client is not None
         else None
     )
 
@@ -231,5 +238,5 @@ def verify_decision(
         "contract_address": contract,
         "onchain_decision_id": int(onchain_id) if onchain_id else None,
         "valid": valid,
-        "chain_available": client.available,
+        "chain_available": available,
     }

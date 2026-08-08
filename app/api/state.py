@@ -16,7 +16,7 @@ from functools import lru_cache
 
 import pandas as pd
 
-from app.agents.llm import LLMClient, build_client
+from app.agents.llm import LLMClient, build_client, normalize_mode
 from app.blockchain.client import ChainClient
 from app.config import ARTIFACTS, settings
 from app.data import loader
@@ -89,7 +89,7 @@ class AppState:
 
     def workflow(self, backend: str | None = None) -> Workflow:
         """One workflow per backend, reused. Agents are stateless; the client holds the cache."""
-        key = backend or settings.llm_backend
+        key = normalize_mode(backend)
         if key not in self._clients:
             self._clients[key] = build_client(key)
         return Workflow(client=self._clients[key], retriever=self.retriever)

@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     incident_id      TEXT NOT NULL,
     agent            TEXT NOT NULL,      -- detection|correlation|investigation|triage|remediation|verifier
     sequence         INTEGER NOT NULL,
-    backend          TEXT,               -- openai|cache|deterministic
+    backend          TEXT,               -- live|replay|deterministic (legacy rows may use openai|cache)
     model            TEXT,
     status           TEXT NOT NULL,      -- ok|invalid_output|timeout|error|fallback
     attempts         INTEGER NOT NULL DEFAULT 1,
@@ -111,6 +111,8 @@ CREATE TABLE IF NOT EXISTS blockchain_proofs (
     contract_address TEXT,
     tx_hash         TEXT,
     block_number    INTEGER,
+    gas_used        INTEGER,
+    failure_reason  TEXT,
     agent_address   TEXT,
     evidence_hash   TEXT,
     output_hash     TEXT,

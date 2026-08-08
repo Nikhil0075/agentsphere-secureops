@@ -37,11 +37,42 @@ def session(db_path: str | Path | None = None) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+#: Columns added to schema.sql after a database may already exist on disk.
+#:
+#: `CREATE TABLE IF NOT EXISTS` does nothing to a table that is already there, so a column added to
+#: schema.sql never reaches a developer's or a demo laptop's existing database. This is additive
+#: only and is deliberately not a migration framework: it may add a column and nothing else. A
+#: rename, a retype or a drop needs a real migration and a rebuilt database.
+_ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
+    # Why a failed anchor stores anything at all: the RPC reason ("insufficient funds for
+    # gas * price + value") lived only in the POST response, so a page reload -- or opening
+    # Proof from the tab bar rather than straight after anchoring -- showed "Anchor failed"
+    # with "no reason reported". The one fact that makes the failure actionable was the one
+    # fact not persisted.
+    "blockchain_proofs": {"gas_used": "INTEGER", "failure_reason": "TEXT"},
+}
+
+
+def _ensure_columns(conn: sqlite3.Connection) -> list[str]:
+    """Add any column in :data:`_ADDITIVE_COLUMNS` the table does not already have."""
+    added: list[str] = []
+    for table, columns in _ADDITIVE_COLUMNS.items():
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not existing:
+            continue  # the table itself is absent; executescript will have just created it
+        for name, declaration in columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
+                added.append(f"{table}.{name}")
+    return added
+
+
 def init_db(db_path: str | Path | None = None) -> Path:
     """Create every table. Idempotent."""
     ddl = SCHEMA_PATH.read_text(encoding="utf-8")
     with session(db_path) as conn:
         conn.executescript(ddl)
+        _ensure_columns(conn)
     return Path(db_path) if db_path else settings.resolved_db_path
 
 
