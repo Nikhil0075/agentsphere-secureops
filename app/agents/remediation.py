@@ -27,10 +27,11 @@ class RemediationAgent(Agent):
     role = (
         "Response planning. Given the triage result, choose the single most appropriate action "
         "from the catalogue supplied, state its risk level, and give a rollback plan. Choose the "
-        "least invasive action that actually addresses the finding — proposing device isolation "
-        "for a low-confidence benign positive is a worse error than proposing monitoring for a "
-        "genuine compromise, because the first one is the kind of mistake that stops an "
-        "organisation trusting the system at all. Use only action ids from the catalogue."
+        "least invasive action that actually addresses the finding. A high-confidence true "
+        "positive requires a containment response, not passive monitoring; medium/high-risk "
+        "actions are expected to stop at the human policy gate. A low-confidence finding should "
+        "use verification or monitoring, and a BenignPositive or FalsePositive should remain "
+        "low-risk. Use only action ids from the catalogue."
     )
 
     def build_context(self, state: WorkflowState, context: IncidentContext = None, **kwargs):
@@ -69,6 +70,13 @@ class RemediationAgent(Agent):
             f"Action catalogue (choose exactly one id):\n{context['catalogue_block']}\n\n"
             f"Actions applicable to {context['label']}: "
             f"{', '.join(context['applicable_ids']) or 'none'}\n\n"
+            "Selection tiers:\n"
+            "- TruePositive at confidence >= 0.80: choose a reversible medium/high-risk "
+            "containment action supported by the recorded entity types; do not choose monitoring "
+            "merely to avoid human approval.\n"
+            "- TruePositive below 0.80: choose low-risk verification/monitoring unless the evidence "
+            "clearly supports containment.\n"
+            "- BenignPositive or FalsePositive: choose a low-risk applicable action.\n\n"
             "Return recommended_action (a catalogue id), action_risk matching that action's "
             "risk level, rollback_plan and justification. All actions are simulated."
         )

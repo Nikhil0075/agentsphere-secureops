@@ -369,7 +369,11 @@ class AgentsSDKClient:
         counted.
         """
         try:
-            from agents import set_default_openai_client, set_tracing_export_api_key
+            from agents import (
+                set_default_openai_client,
+                set_tracing_disabled,
+                set_tracing_export_api_key,
+            )
             from openai import AsyncOpenAI
 
             self._client = AsyncOpenAI(
@@ -377,7 +381,11 @@ class AgentsSDKClient:
             )
             # The SDK exports traces by default. Local/offline venues often allow the model
             # request but block the separate trace exporter, which otherwise creates a background
-            # retry loop after a completed workflow. Trace export is therefore explicit opt-in.
+            # retry loop after a completed workflow. `use_for_tracing=False` only avoids taking
+            # the model client's key for export; it does not disable the SDK's global trace
+            # provider. Disable that provider explicitly so an opted-out process cannot enqueue
+            # trace batches at all. Trace export is therefore explicit opt-in.
+            set_tracing_disabled(not settings.agent_tracing_enabled)
             set_default_openai_client(
                 self._client, use_for_tracing=settings.agent_tracing_enabled
             )
@@ -611,6 +619,7 @@ class ReplayClient:
         raise CacheMiss(
             f"{name}: replay cache miss for {model} at prompt version "
             f"{settings.agent_prompt_version}. Run: python scripts/prewarm_replay.py"
+            " --dry-run, then rerun with an explicit --max-live-stages budget"
         )
 
 

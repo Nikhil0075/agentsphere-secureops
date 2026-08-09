@@ -26,11 +26,14 @@ export function ChainFacts({
   // ever asked. Rendering that as "Contract says match" claims an independent confirmation the
   // system did not obtain, which is the one thing this screen must never do.
   const asked = Boolean(proof?.chain_checked);
+  // The explicit `check_chain=true` proof response already contains the result of the contract's
+  // verify call. Keep the integrity value as a compatibility fallback for older API responses.
+  const confirmedValid = proof?.valid ?? integrity?.onchain_valid;
   const contractSays = !asked
     ? "not asked"
-    : integrity?.onchain_valid === null || integrity?.onchain_valid === undefined
+    : confirmedValid === null || confirmedValid === undefined
       ? "no answer"
-      : integrity.onchain_valid
+      : confirmedValid
         ? "match"
         : "no match";
 
@@ -42,7 +45,7 @@ export function ChainFacts({
   // A wallet that has run out of test ETH is a five-second fix once you can see it, and an
   // afternoon of confusion when you cannot.
   const attempted = (proof?.attempts?.length ?? 0) > 0;
-  const failed = attempted && !proof?.tx_hash;
+  const failed = attempted && !proof?.anchored;
   const outOfGas = /insufficient funds/i.test(proof?.reason ?? "");
 
   return (
@@ -86,9 +89,9 @@ export function ChainFacts({
           tone={
             !asked
               ? undefined
-              : integrity?.onchain_valid === false
+              : confirmedValid === false
                 ? "bad"
-                : integrity?.onchain_valid === true
+                : confirmedValid === true
                   ? "good"
                   : undefined
           }

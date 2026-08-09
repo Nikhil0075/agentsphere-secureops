@@ -88,9 +88,12 @@ the reason the demo runs on validated replay rather than live.
 
 Two things did hold, and they are the point. Union-Find correlation returned the same cluster count
 every time — that layer is ours and it is deterministic. And the policy gate demanded a human on
-**every** run of both incidents, including all three contradictory ones, because the confidence
-never cleared the auto-approval floor. The system is not reliable because the model is; it is
-reliable because the model is not trusted to be.
+**every** run of both incidents, including all three contradictory ones. That measurement also
+exposed an over-broad verifier prompt: it treated ordinary sparsity as a contradiction and became
+an all-escalate switch. Prompt version `2026-08-09` replaces that behaviour with four named semantic
+checks, retains seven structural checks in code, and adds a bounded low-risk dual-agreement path.
+The corrected live profile must pass a fresh same-set evaluation before promotion; the old numbers
+are evidence about the old prompt, not a claim about the new one.
 
 **The deterministic backend's metrics measure plumbing, not reasoning.** On that backend the
 agents score *identically* to the baseline (macro F1 0.7065, 0.0% disagreement) because
@@ -202,16 +205,23 @@ configuration. Kaggle credentials, if prompted for, go in `~/.kaggle/kaggle.json
 
 Live execution uses the OpenAI Agents SDK and its Responses API. Set `LLM_BACKEND=live` and
 `OPENAI_API_KEY` in `.env`; supporting agents route to `gpt-5.6-terra`, while Triage and Verifier
-route to `gpt-5.6-sol`. To prepare the presentation-safe default, run:
+route to `gpt-5.6-sol`. To prepare the presentation-safe default, inspect the paid request
+envelope first, then choose an explicit hard stage budget:
 
 ```bash
-.venv/Scripts/python scripts/prewarm_replay.py
+.venv/Scripts/python scripts/prewarm_replay.py --dry-run
+.venv/Scripts/python scripts/prewarm_replay.py --max-live-stages 36
 ```
 
+The command refuses to construct a live client without `--max-live-stages`. Cache hits consume no
+budget; agent retries do. A small value such as `6` supports incremental warming without allowing
+an accidental full sweep.
+
 Then set `LLM_BACKEND=replay`. Validated responses are read from `artifacts/llm_cache/` with **no
-outbound call under any circumstances** — replay is hermetic, and a miss is a visible error naming
-the fix rather than a silent live call. Live fill is opt-in and belongs to `prewarm_replay.py`
-alone. Compatibility aliases `openai` and `cache` remain accepted.
+outbound call under any circumstances** — replay is hermetic, and a miss degrades visibly to the
+deterministic stage rather than becoming a silent live call. The policy gate blocks autonomous
+finalisation whenever any stage degraded. Live fill is opt-in and belongs to
+`prewarm_replay.py` alone. Compatibility aliases `openai` and `cache` remain accepted.
 
 Agents SDK trace export is disabled by default so local or restricted networks do not leave a
 background exporter retrying after successful API responses. Set `AGENT_TRACING_ENABLED=true` to

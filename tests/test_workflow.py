@@ -353,6 +353,13 @@ def test_the_verifier_is_shown_the_evidence_contents(one_incident):
     assert f"[{first}]" in prompt, "the verifier has no evidence block to check citations against"
 
 
+def test_the_verifier_prompt_defines_a_fixed_non_classifying_semantic_rubric(one_incident):
+    prompt, _, _ = _prompt_for("verifier", one_incident)
+    for policy_id in ("SEM-001", "SEM-002", "SEM-003", "SEM-004"):
+        assert policy_id in prompt
+    assert "missing affirmative proof is not a contradiction" in prompt
+
+
 def test_triage_is_shown_the_contents_of_the_evidence_it_must_cite(one_incident):
     prompt, agent_context, context = _prompt_for("triage", one_incident)
 
@@ -360,6 +367,13 @@ def test_triage_is_shown_the_contents_of_the_evidence_it_must_cite(one_incident)
     assert f"[{first}]" in prompt, "triage is asked to cite records it was never shown"
     for evidence_id in agent_context["evidence_bundle"][:5]:
         assert evidence_id in prompt
+    outside = [
+        str(value)
+        for value in context.evidence["evidence_id"]
+        if str(value) not in set(agent_context["evidence_bundle"])
+    ]
+    for evidence_id in outside[:5]:
+        assert f"[{evidence_id}]" not in prompt
 
 
 # --- agent traces ----------------------------------------------------------------------------

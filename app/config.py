@@ -56,9 +56,10 @@ class Settings:
     openai_support_model: str = os.getenv("OPENAI_SUPPORT_MODEL", "gpt-5.6-terra")
     openai_judge_model: str = os.getenv("OPENAI_JUDGE_MODEL", "gpt-5.6-sol")
     openai_reasoning_effort: str = os.getenv("OPENAI_REASONING_EFFORT", "medium")
-    # 2026-08-08: Triage and Verifier now receive the evidence records they are asked to cite and
-    # verify. Bumped so no cached response from the starved prompts can be replayed.
-    agent_prompt_version: str = os.getenv("AGENT_PROMPT_VERSION", "2026-08-08")
+    # 2026-08-09: evidence is bundle-scoped and the Verifier uses a fixed semantic rubric instead
+    # of treating ordinary uncertainty as a contradiction. Old all-escalate generations must not
+    # be replayed under the corrected policy semantics.
+    agent_prompt_version: str = os.getenv("AGENT_PROMPT_VERSION", "2026-08-09")
     agent_tracing_enabled: bool = _bool("AGENT_TRACING_ENABLED", False)
     agent_trace_include_sensitive: bool = _bool("AGENT_TRACE_INCLUDE_SENSITIVE", False)
     llm_timeout_seconds: int = _int("LLM_TIMEOUT_SECONDS", 45)

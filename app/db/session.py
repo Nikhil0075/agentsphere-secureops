@@ -49,7 +49,13 @@ _ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
     # Proof from the tab bar rather than straight after anchoring -- showed "Anchor failed"
     # with "no reason reported". The one fact that makes the failure actionable was the one
     # fact not persisted.
-    "blockchain_proofs": {"gas_used": "INTEGER", "failure_reason": "TEXT"},
+    "blockchain_proofs": {
+        "gas_used": "INTEGER",
+        "failure_reason": "TEXT",
+        # Needed when a retry discovers that the fingerprint already exists on chain. The
+        # original transaction may not be in this database, but the contract decision id is.
+        "onchain_decision_id": "INTEGER",
+    },
 }
 
 

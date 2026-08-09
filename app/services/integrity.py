@@ -165,7 +165,11 @@ def check(
         FROM decisions d
         LEFT JOIN blockchain_proofs p ON p.decision_id = d.decision_id
         WHERE d.decision_id = ?
-        ORDER BY p.created_at DESC LIMIT 1
+        ORDER BY
+            CASE WHEN COALESCE(p.tx_hash, '') != '' OR p.onchain_decision_id IS NOT NULL
+                 THEN 0 ELSE 1 END,
+            p.created_at DESC, p.rowid DESC
+        LIMIT 1
         """,
         (decision_id,),
     ).fetchone()
@@ -231,15 +235,7 @@ def check(
 def _onchain_id(
     client: ChainClient, incident_id: str, evidence_hash: str, output_hash: str
 ) -> int | None:
-    try:
-        found = client._proof.functions.findByFingerprint(  # noqa: SLF001
-            incident_id,
-            client._to_bytes32(evidence_hash),
-            client._to_bytes32(output_hash),
-        ).call()
-        return int(found) or None
-    except Exception:  # noqa: BLE001 - an unreachable chain must not break verification display
-        return None
+    return client.find_by_fingerprint(incident_id, evidence_hash, output_hash)
 
 
 # --- the demo tamper ------------------------------------------------------------------------

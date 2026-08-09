@@ -49,7 +49,15 @@ class TriageAgent(Agent):
             # 0.68 live and 0.77 deterministic against POL-004's 0.80 floor, and its own rationale
             # said the call was "not supported by event-level evidence". Detection has always
             # received this block; Triage should too.
-            "evidence_block": build_evidence_block(context.evidence, limit=25),
+            # Show exactly the evidence that may be cited. Showing extra incident rows while the
+            # allowlist names only the correlation bundle creates an impossible instruction: the
+            # model can reason from a visible row and then be forbidden from citing it.
+            "evidence_block": build_evidence_block(
+                context.evidence[context.evidence["evidence_id"].isin(bundle)]
+                if bundle
+                else context.evidence,
+                limit=25,
+            ),
             "severity": state.detection.severity_score if state.detection else 0.5,
             "investigation_summary": (
                 state.investigation.investigation_summary if state.investigation else ""

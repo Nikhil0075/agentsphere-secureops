@@ -30,6 +30,7 @@ from app.agents.llm import (
     ResponseCache,
     build_client,
     cache_key,
+    model_profile,
     model_for_agent,
 )
 from app.agents.schemas import DetectionOutput, InvestigationOutput, MitreMapping, SimilarCase
@@ -330,10 +331,15 @@ def _manifest() -> dict:
 
 
 _MANIFEST = _manifest()
-_ARC_READY = bool(_MANIFEST.get("ready")) and bool(_MANIFEST.get("replay_verified"))
+_ARC_READY = (
+    bool(_MANIFEST.get("ready"))
+    and bool(_MANIFEST.get("replay_verified"))
+    and _MANIFEST.get("model_profile") == model_profile()
+)
 
 arc_gate = pytest.mark.skipif(
-    not _ARC_READY, reason="demo arc not prewarmed; run scripts/prewarm_replay.py"
+    not _ARC_READY,
+    reason="demo arc not prewarmed; run scripts/prewarm_replay.py --dry-run first",
 )
 
 

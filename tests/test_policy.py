@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.agents.schemas import (
+    BaselinePrediction,
     RemediationOutput,
     RiskLevel,
     TriageLabel,
@@ -206,6 +207,71 @@ def test_low_confidence_blocks_even_a_low_risk_action():
     assert "POL-004" in decision.failed_policies()
 
 
+def test_high_confidence_baseline_agreement_allows_bounded_low_risk_path():
+    baseline = BaselinePrediction(
+        label=TriageLabel.FALSE_POSITIVE,
+        confidence=0.95,
+        model_name="calibrated-baseline",
+    )
+    decision = engine.evaluate(
+        _triage(confidence=0.58),
+        _remediation(),
+        _verifier(),
+        evidence_ids=["EVD-1"],
+        baseline=baseline,
+    )
+    assert decision.auto_approved
+    assert "dual agreement" in next(
+        check.detail for check in decision.checks if check.policy_id == "POL-004"
+    )
+
+
+def test_dual_agreement_never_overrides_label_disagreement():
+    baseline = BaselinePrediction(
+        label=TriageLabel.TRUE_POSITIVE,
+        confidence=0.99,
+        model_name="calibrated-baseline",
+    )
+    decision = engine.evaluate(
+        _triage(confidence=0.72),
+        _remediation(),
+        _verifier(),
+        evidence_ids=["EVD-1"],
+        baseline=baseline,
+    )
+    assert decision.requires_approval
+    assert "POL-004" in decision.failed_policies()
+
+
+def test_dual_agreement_is_never_an_autonomous_true_positive_path():
+    baseline = BaselinePrediction(
+        label=TriageLabel.TRUE_POSITIVE,
+        confidence=0.99,
+        model_name="calibrated-baseline",
+    )
+    decision = engine.evaluate(
+        _triage(label=TriageLabel.TRUE_POSITIVE, confidence=0.72),
+        _remediation("request_user_verification", RiskLevel.LOW),
+        _verifier(),
+        evidence_ids=["EVD-1"],
+        baseline=baseline,
+    )
+    assert decision.requires_approval
+    assert "POL-004" in decision.failed_policies()
+
+
+def test_any_degraded_agent_blocks_autonomy():
+    decision = engine.evaluate(
+        _triage(),
+        _remediation(),
+        _verifier(),
+        evidence_ids=["EVD-1"],
+        degraded_agents=["verifier"],
+    )
+    assert decision.requires_approval
+    assert "POL-006" in decision.failed_policies()
+
+
 def test_verifier_rejection_blocks_finalisation():
     decision = engine.evaluate(
         _triage(), _remediation(), _verifier("reject", ["contradicted by evidence"]),
@@ -257,4 +323,5 @@ def test_every_decision_carries_its_checks():
         "POL-003",
         "POL-004",
         "POL-005",
+        "POL-006",
     }

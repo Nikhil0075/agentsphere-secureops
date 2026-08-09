@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -171,6 +173,11 @@ def _client_with_abi() -> ChainClient:
                             "name": "UnauthorisedAgent",
                             "inputs": [{"name": "caller", "type": "address"}],
                         },
+                        {
+                            "type": "error",
+                            "name": "DuplicateDecision",
+                            "inputs": [{"name": "existingDecisionId", "type": "uint256"}],
+                        },
                     ],
                 }
             },
@@ -197,6 +204,72 @@ def test_a_raw_revert_payload_decodes_to_the_error_name():
         "000000000000000000000001',)"
     )
     assert client._decode_error(raw) == "ApprovalRequired"
+
+
+def test_duplicate_decision_selector_decodes_the_reported_chain_error():
+    client = _client_with_abi()
+    raw = (
+        "ContractCustomError: "
+        "('0x72be7b0b0000000000000000000000000000000000000000000000000000000000000015',)"
+    )
+
+    assert client._decode_error(raw) == "DuplicateDecision"
+
+
+def test_submit_is_idempotent_when_the_fingerprint_is_already_anchored():
+    client = _client_with_abi()
+    client._proof = MagicMock()
+    client._accounts["triage"] = SimpleNamespace(address="0x" + "33" * 20)
+    client._proof.functions.findByFingerprint.return_value.call.return_value = 21
+    client.get_decision = MagicMock(return_value={"agent": "0x" + "44" * 20})
+    client._send = MagicMock(side_effect=AssertionError("must not submit a duplicate"))
+    digest = hash_payload({"proof": "same"})
+
+    result = client.submit_decision(
+        "INC-existing", digest, digest, "TruePositive", "medium"
+    )
+
+    assert result.anchored is True
+    assert result.decision_id == 21
+    assert result.tx_hash == ""
+    assert result.agent_address == "0x" + "44" * 20
+    assert result.onchain_state == "proposed"
+    client._send.assert_not_called()
+
+
+def test_low_risk_lifecycle_finalizes_without_a_human_approval():
+    class LifecycleClient:
+        def __init__(self):
+            self.finalized = 0
+
+        def get_decision(self, decision_id):
+            return {"state": "finalized" if self.finalized else "proposed"}
+
+        def finalize_decision(self, decision_id):
+            self.finalized += 1
+            return AnchorResult(anchored=True, decision_id=decision_id)
+
+    chain = LifecycleClient()
+    state, reason = decisions.advance_onchain_decision(
+        chain, 7, "low", initial_state="proposed"
+    )
+
+    assert state == "finalized"
+    assert reason == ""
+    assert chain.finalized == 1
+
+
+def test_medium_risk_lifecycle_stays_proposed_without_human_approval():
+    chain = MagicMock()
+
+    state, reason = decisions.advance_onchain_decision(
+        chain, 7, "medium", initial_state="proposed"
+    )
+
+    assert state == "proposed"
+    assert reason == ""
+    chain.approve_decision.assert_not_called()
+    chain.finalize_decision.assert_not_called()
 
 
 def test_a_decoded_provider_message_still_matches():

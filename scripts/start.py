@@ -160,13 +160,23 @@ def preflight() -> list[Check]:
             detail = "never prewarmed"
         elif not profile_matches:
             detail = "prewarmed under a different model or prompt version"
+        elif manifest.get("live_outcome_failures") or manifest.get("replay_outcome_failures"):
+            affected = set(manifest.get("live_outcome_failures", {})) | set(
+                manifest.get("replay_outcome_failures", {})
+            )
+            detail = f"{len(affected)} case(s) violate the six-arc autonomy contract"
         elif not verified:
             detail = "warmed but replay not verified; some stage would miss the cache"
         else:
             detail = f"{len(manifest.get('failures', {}))} case(s) degraded during warming"
 
         checks.append(
-            Check("demo replay", replay_ready, detail, "python scripts/prewarm_replay.py")
+            Check(
+                "demo replay",
+                replay_ready,
+                detail,
+                "python scripts/prewarm_replay.py --dry-run",
+            )
         )
     return checks
 

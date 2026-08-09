@@ -209,12 +209,22 @@ def _model_verifier(payload: dict):
     return VerifierAgent(FailingClient(failures=0, payload=payload))
 
 
+def _semantic_checks(*failed: str) -> list[dict]:
+    return [
+        {
+            "policy_id": policy_id,
+            "passed": policy_id not in failed,
+            "detail": "material conflict found" if policy_id in failed else "check passed",
+        }
+        for policy_id in ("SEM-001", "SEM-002", "SEM-003", "SEM-004")
+    ]
+
+
 def _llm_output(verdict: str, checks: list[dict] | None = None, contradictions=()) -> dict:
     return {
         "verdict": verdict,
         "contradictions": list(contradictions),
-        "policy_checks": checks
-        or [{"policy_id": "MadeUpPolicy", "passed": True, "detail": "looks fine to me"}],
+        "policy_checks": _semantic_checks() if checks is None else checks,
         "escalation_required": verdict != "accept",
         "reasoning": "model reasoning",
     }
@@ -235,33 +245,83 @@ def test_a_model_cannot_accept_a_structurally_broken_chain(context):
     assert output.verdict is VerifierVerdict.REJECT
 
 
-def test_a_model_cannot_reject_on_taste_alone(context):
-    """Measured behaviour: the live model rejected 40/40 real incidents citing 'evidence gaps'.
-
-    Without a structural failure to point at, that becomes an escalation — a human still looks,
-    but the rejection rate keeps meaning what it says.
-    """
+def test_a_model_cannot_reject_or_escalate_on_taste_alone(context):
+    """A vague raw verdict cannot become a hidden policy when every named check passed."""
     state = scenarios.true_positive()
-    output = _model_verifier(
+    output, record = _model_verifier(
         _llm_output("reject", contradictions=["I am uneasy about this"])
-    ).run(state, context=context)[0]
-    assert output.verdict is VerifierVerdict.ESCALATE
+    ).run(state, context=context)
+    assert record.status == "fallback"
+    assert output.verdict is VerifierVerdict.ACCEPT
+    assert output.contradictions == []
 
 
 def test_the_models_own_checks_are_kept_but_marked_as_its_own(context):
     """Its reasoning stays auditable; it just cannot masquerade as a system policy id."""
     state = scenarios.true_positive()
-    output = _model_verifier(_llm_output("accept")).run(state, context=context)[0]
+    output = _model_verifier(
+        _llm_output(
+            "accept",
+            checks=_semantic_checks()
+            + [{"policy_id": "MadeUpPolicy", "passed": True, "detail": "looks fine"}],
+        )
+    ).run(state, context=context)[0]
     ids = {c.policy_id for c in output.policy_checks}
     assert "LLM-MadeUpPolicy" in ids
     assert "MadeUpPolicy" not in ids
 
 
-def test_a_model_escalation_is_respected(context):
+def test_a_failed_material_semantic_check_is_respected(context):
     state = scenarios.true_positive()
-    output = _model_verifier(_llm_output("escalate")).run(state, context=context)[0]
+    output = _model_verifier(
+        _llm_output(
+            "escalate",
+            checks=_semantic_checks("SEM-004"),
+        )
+    ).run(state, context=context)[0]
     assert output.verdict is VerifierVerdict.ESCALATE
     assert output.escalation_required
+    assert output.contradictions == []
+
+
+def test_an_escalation_concern_is_not_forced_to_masquerade_as_a_contradiction(context):
+    state = scenarios.true_positive()
+    output, record = _model_verifier(
+        _llm_output(
+            "escalate",
+            checks=_semantic_checks("SEM-003"),
+        )
+    ).run(state, context=context)
+
+    assert record.status == "ok"
+    assert output.verdict is VerifierVerdict.ESCALATE
+    assert output.contradictions == []
+
+
+def test_direct_evidence_contradiction_can_reject_a_structurally_valid_chain(context):
+    state = scenarios.true_positive()
+    output = _model_verifier(
+        _llm_output(
+            "reject",
+            checks=_semantic_checks("SEM-001"),
+            contradictions=["cited evidence directly contradicts the rationale"],
+        )
+    ).run(state, context=context)[0]
+    assert output.verdict is VerifierVerdict.REJECT
+
+
+def test_missing_semantic_rubric_retries_then_degrades_to_structural_verification(context):
+    state = scenarios.true_positive()
+    agent = _model_verifier(
+        _llm_output(
+            "escalate",
+            checks=[{"policy_id": "confidence", "passed": False, "detail": "uncertain"}],
+        )
+    )
+    output, record = agent.run(state, context=context)
+    assert record.status == "fallback"
+    assert record.attempts == 2
+    assert output.verdict is VerifierVerdict.ACCEPT
 
 
 def test_structural_checks_are_not_listed_twice(context):

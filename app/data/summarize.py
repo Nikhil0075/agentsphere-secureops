@@ -22,6 +22,24 @@ MAX_ALERT_TITLES = 4
 _LEAKY_FIELDS = frozenset({"label", "label_int"})
 
 
+def _text(value: object) -> str:
+    """Render a dataset scalar without leaking pandas' missing-value sentinels.
+
+    GUIDE is sparse. Converting a missing float to ``str`` produces the literal text ``nan``,
+    which an LLM reasonably reads as an observed value rather than as absence. Keep absence
+    absent in every prompt-facing summary.
+    """
+    if value is None:
+        return ""
+    try:
+        if bool(pd.isna(value)):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    rendered = str(value).strip()
+    return "" if rendered.lower() in {"nan", "none", "<na>"} else rendered
+
+
 def _opaque(value: str) -> bool:
     """True when a value is a bare surrogate id carrying no meaning to a reader.
 
@@ -43,8 +61,8 @@ def _label_ids(values: list[str]) -> str:
 
 def _distinct(series: pd.Series, limit: int) -> list[str]:
     seen: list[str] = []
-    for value in series.dropna().astype(str):
-        value = value.strip()
+    for raw in series:
+        value = _text(raw)
         if value and value not in seen:
             seen.append(value)
         if len(seen) >= limit:
@@ -117,7 +135,9 @@ def build_evidence_block(evidence: pd.DataFrame, limit: int = 25) -> str:
     """
     rows = []
     for _, row in evidence.head(limit).iterrows():
-        parts = [f"[{row['evidence_id']}]", f"alert={row['alert_id']}"]
+        evidence_id = _text(row.get("evidence_id"))
+        alert_id = _text(row.get("alert_id"))
+        parts = [f"[{evidence_id}]", f"alert={alert_id}"]
         for key in (
             "entity_type",
             "evidence_role",
@@ -130,7 +150,7 @@ def build_evidence_block(evidence: pd.DataFrame, limit: int = 25) -> str:
             "file_sha256",
             "url",
         ):
-            value = str(row.get(key, "") or "").strip()
+            value = _text(row.get(key, ""))
             if value:
                 if key == "file_sha256":
                     value = value[:16] + "…"

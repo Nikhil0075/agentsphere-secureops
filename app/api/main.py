@@ -539,7 +539,8 @@ def approve(decision_id: str, request: models.ApprovalRequest) -> models.ProofIn
     st = get_state()
     with db.session() as conn:
         row = conn.execute(
-            "SELECT incident_id, evidence_hash, output_hash FROM decisions WHERE decision_id = ?",
+            """SELECT incident_id, evidence_hash, output_hash, action_risk
+               FROM decisions WHERE decision_id = ?""",
             (decision_id,),
         ).fetchone()
         if row is None:
@@ -551,20 +552,27 @@ def approve(decision_id: str, request: models.ApprovalRequest) -> models.ProofIn
         client = st.chain()
         info = decisions_service.verify_decision(conn, decision_id, client)
 
+        lifecycle_reason = ""
         if client.available and info.get("onchain_decision_id"):
-            comment_hash = decisions_service.comment_hash_for(decision_id, conn)
-            client.approve_decision(
-                int(info["onchain_decision_id"]), request.approved, comment_hash
+            onchain_id = int(info["onchain_decision_id"])
+            record = client.get_decision(onchain_id) or {}
+            state, lifecycle_reason = decisions_service.advance_onchain_decision(
+                client,
+                onchain_id,
+                row[3] or "high",
+                approved=request.approved,
+                comment_hash=decisions_service.comment_hash_for(decision_id, conn),
+                initial_state=str(record.get("state", "") or ""),
             )
-            if request.approved:
-                client.finalize_decision(int(info["onchain_decision_id"]))
+            decisions_service.update_onchain_state(conn, decision_id, onchain_id, state)
             info = decisions_service.verify_decision(conn, decision_id, client)
 
         attempts = _anchor_attempts(conn, decision_id)
         approval = _local_approval(conn, decision_id)
 
     return _proof_info(
-        decision_id, info, st, attempts=attempts, approval=approval, client=client
+        decision_id, info, st, attempts=attempts, approval=approval, client=client,
+        reason=lifecycle_reason,
     )
 
 
@@ -589,6 +597,20 @@ def anchor(decision_id: str) -> models.ProofInfo:
             label=row[1] or "Unknown",
             risk=row[2] or "high",
         )
+        approval = _local_approval(conn, decision_id)
+        lifecycle_reason = ""
+        if outcome.anchored and outcome.decision_id:
+            state, lifecycle_reason = decisions_service.advance_onchain_decision(
+                client,
+                int(outcome.decision_id),
+                row[2] or "high",
+                approved=approval.approved if approval is not None else None,
+                comment_hash=approval.comment_hash if approval is not None else "",
+                initial_state=outcome.onchain_state,
+            )
+            outcome.onchain_state = state
+            if lifecycle_reason:
+                outcome.reason = lifecycle_reason
         values = (
             # A content-derived id collides on retry: a failed anchor has no block number,
             # so a second attempt would reuse `PRF-<decision>-0` and blow up on the unique
@@ -603,19 +625,23 @@ def anchor(decision_id: str) -> models.ProofInfo:
             outcome.agent_address,
             row[3],
             row[4],
-            "submitted" if outcome.anchored else "unanchored",
-            # Only meaningful on failure, and only the chain's own words. A successful anchor
-            # stores nothing here so the column never carries a stale explanation.
-            "" if outcome.anchored else (outcome.reason or ""),
+            (outcome.onchain_state or "proposed") if outcome.anchored else "unanchored",
+            # A successful submission may still fail to advance approval/finalisation. Preserve
+            # that narrower reason without misreporting the anchor itself as failed.
+            outcome.reason or "",
         )
         try:
             conn.execute(
                 """INSERT INTO blockchain_proofs (
                        proof_id, decision_id, chain_id, contract_address, tx_hash, block_number,
                        gas_used, agent_address, evidence_hash, output_hash, onchain_state,
-                       failure_reason, anchored_at
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?, datetime('now'))""",
-                values[:6] + (outcome.gas_used,) + values[6:],
+                       onchain_decision_id, failure_reason, anchored_at
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now'))""",
+                values[:6]
+                + (outcome.gas_used,)
+                + values[6:10]
+                + (outcome.decision_id,)
+                + values[10:],
             )
         except sqlite3.OperationalError:
             # A database created before gas_used existed. Record the anchor without it rather
@@ -792,7 +818,10 @@ def _proof_info(
     return models.ProofInfo(
         decision_id=decision_id,
         found=bool(info.get("found")),
-        anchored=bool(tx_hash),
+        # A content-addressed retry may recover an existing on-chain decision without possessing
+        # its original transaction hash. The contract id, not a local explorer link, proves the
+        # submission exists.
+        anchored=bool(tx_hash or onchain_id),
         evidence_hash=info.get("evidence_hash") or "",
         output_hash=info.get("output_hash") or "",
         tx_hash=tx_hash,

@@ -46,6 +46,9 @@ class AnchorResult:
     chain_id: int | None = None
     contract_address: str = ""
     gas_used: int | None = None
+    #: Contract lifecycle state when known. Especially important for idempotent recovery, where
+    #: the existing decision may already be approved, rejected or finalized.
+    onchain_state: str = ""
     reason: str = ""
     #: Decoded Solidity custom error name, e.g. ``ApprovalRequired``. Empty when the failure was
     #: not a contract revert.
@@ -75,6 +78,7 @@ class AnchorResult:
             "chain_id": self.chain_id,
             "contract_address": self.contract_address,
             "gas_used": self.gas_used,
+            "onchain_state": self.onchain_state,
             "explorer_url": self.explorer_url,
             "reason": self.reason,
             "error": self.error,
@@ -260,6 +264,23 @@ class ChainClient:
         if account is None:
             return AnchorResult(anchored=False, reason=f"no key for agent role {agent_role!r}")
 
+        # `submitDecision` is intentionally duplicate-protected. A browser retry, API restart or
+        # lost RPC response can therefore find the proof already on chain even though this local
+        # database has no successful transaction row. Treat the content-addressed record as the
+        # success it is instead of building a transaction guaranteed to revert with
+        # DuplicateDecision(existingDecisionId).
+        existing = self.find_by_fingerprint(incident_id, evidence_hash, output_hash)
+        if existing:
+            record = self.get_decision(existing) or {}
+            return AnchorResult(
+                anchored=True,
+                decision_id=existing,
+                agent_address=record.get("agent", account.address),
+                chain_id=self.chain_id,
+                contract_address=self.contract_address,
+                onchain_state=record.get("state", "proposed"),
+            )
+
         try:
             fn = self._proof.functions.submitDecision(
                 incident_id,
@@ -283,11 +304,27 @@ class ChainClient:
                 agent_address=account.address,
                 chain_id=self.chain_id,
                 contract_address=self.contract_address,
+                onchain_state="proposed",
             )
         except Exception as exc:  # noqa: BLE001
             message = f"{type(exc).__name__}: {exc}"
+            error = self._decode_error(message)
+            # Close the race between the read above and submission. If another request anchored
+            # the fingerprint first, the contract is authoritative and the retry is successful.
+            if error == "DuplicateDecision":
+                existing = self.find_by_fingerprint(incident_id, evidence_hash, output_hash)
+                if existing:
+                    record = self.get_decision(existing) or {}
+                    return AnchorResult(
+                        anchored=True,
+                        decision_id=existing,
+                        agent_address=record.get("agent", account.address),
+                        chain_id=self.chain_id,
+                        contract_address=self.contract_address,
+                        onchain_state=record.get("state", "proposed"),
+                    )
             return AnchorResult(
-                anchored=False, reason=message, error=self._decode_error(message)
+                anchored=False, reason=message, error=error
             )
 
     def approve_decision(
@@ -312,6 +349,7 @@ class ChainClient:
                 agent_address=account.address,
                 chain_id=self.chain_id,
                 contract_address=self.contract_address,
+                onchain_state="approved" if approved else "rejected",
             )
         except Exception as exc:  # noqa: BLE001
             message = f"{type(exc).__name__}: {exc}"
@@ -339,6 +377,7 @@ class ChainClient:
                 agent_address=account.address,
                 chain_id=self.chain_id,
                 contract_address=self.contract_address,
+                onchain_state="finalized",
             )
         except Exception as exc:  # noqa: BLE001
             message = f"{type(exc).__name__}: {exc}"
@@ -369,6 +408,22 @@ class ChainClient:
             "decided_at": d[10],
             "finalized_at": d[11],
         }
+
+    def find_by_fingerprint(
+        self, incident_id: str, evidence_hash: str, output_hash: str
+    ) -> int | None:
+        """Return an existing content-addressed decision, or ``None`` on absence/RPC failure."""
+        if not self.available:
+            return None
+        try:
+            found = self._proof.functions.findByFingerprint(
+                incident_id,
+                self._to_bytes32(evidence_hash),
+                self._to_bytes32(output_hash),
+            ).call()
+            return int(found) or None
+        except Exception:  # noqa: BLE001 - reads degrade just like every other client operation
+            return None
 
     def verify(self, decision_id: int, evidence_hash: str, output_hash: str) -> bool | None:
         """On-chain recompute-and-compare. ``None`` means the chain could not answer."""

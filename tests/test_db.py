@@ -38,6 +38,7 @@ def test_blockchain_proofs_carries_gas_used(tmp_path):
     path = tmp_path / "test.db"
     db.init_db(path)
     assert "gas_used" in _columns(path, "blockchain_proofs")
+    assert "onchain_decision_id" in _columns(path, "blockchain_proofs")
 
 
 def test_a_database_predating_a_column_gains_it_on_init(tmp_path):

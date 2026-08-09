@@ -432,6 +432,89 @@ def test_anchoring_without_a_chain_still_returns_a_result(client, workflow):
     assert "chain_available" in response.json()
 
 
+def test_anchor_retry_recovers_an_existing_content_addressed_decision(
+    client, workflow, monkeypatch
+):
+    """A lost receipt and approve-first ordering recover and finalize the existing proof."""
+    from app.api.state import AppState
+    from app.blockchain.client import AnchorResult, load_deployment
+
+    deployment = load_deployment() or {}
+    proof_address = (deployment.get("contracts", {}).get("DecisionProof") or {}).get(
+        "address", "0x" + "22" * 20
+    )
+
+    # Reproduce the UI ordering that exposed the defect: approve in Workflow, then anchor in Proof.
+    client.post(
+        f"/api/decisions/{workflow['decision_id']}/approve",
+        json={"approved": True, "analyst": "analyst@soc", "comment": "confirmed"},
+    )
+
+    class RecoveredChain:
+        available = True
+
+        def __init__(self):
+            self.state = "proposed"
+            self.approval_calls = 0
+            self.finalize_calls = 0
+
+        def submit_decision(self, **kwargs):
+            return AnchorResult(
+                anchored=True,
+                decision_id=21,
+                chain_id=11155111,
+                contract_address=proof_address,
+                agent_address="0x" + "33" * 20,
+                onchain_state=self.state,
+            )
+
+        def approve_decision(self, decision_id, approved, comment_hash):
+            self.approval_calls += 1
+            self.state = "approved" if approved else "rejected"
+            return AnchorResult(anchored=True, decision_id=decision_id, onchain_state=self.state)
+
+        def finalize_decision(self, decision_id):
+            self.finalize_calls += 1
+            self.state = "finalized"
+            return AnchorResult(anchored=True, decision_id=decision_id, onchain_state=self.state)
+
+        def verify(self, decision_id, evidence_hash, output_hash):
+            return decision_id == 21
+
+        def find_by_fingerprint(self, incident_id, evidence_hash, output_hash):
+            return 21
+
+        def get_decision(self, decision_id):
+            return {
+                "incident_id": workflow["incident_id"],
+                "evidence_hash": workflow["evidence_hash"],
+                "output_hash": workflow["output_hash"],
+                "label": workflow["triage"]["label"],
+                "risk": workflow["gate"]["action_risk"],
+                "state": self.state,
+                "agent": "0x" + "33" * 20,
+                "approver": "0x" + "00" * 20,
+                "comment_hash": "0x" + "00" * 32,
+                "submitted_at": 1,
+                "decided_at": 0,
+                "finalized_at": 0,
+            }
+
+    recovered = RecoveredChain()
+    monkeypatch.setattr(AppState, "chain", lambda self: recovered)
+
+    body = client.post(f"/api/decisions/{workflow['decision_id']}/anchor").json()
+
+    assert body["anchored"] is True
+    assert body["onchain_decision_id"] == 21
+    assert body["tx_hash"] == ""
+    assert body["onchain_state"] == "finalized"
+    assert body["attempts"][-1]["onchain_state"] == "finalized"
+    assert body["reason"] == ""
+    assert recovered.approval_calls == 1
+    assert recovered.finalize_calls == 1
+
+
 # --- metrics ---------------------------------------------------------------------------------
 
 @pytest.fixture

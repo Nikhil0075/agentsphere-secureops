@@ -82,7 +82,7 @@ def arc_readiness() -> str:
     """How many of the six curated cases the manifest says are prewarmed."""
     manifest = LLM_CACHE_DIR / "demo_manifest.json"
     if not manifest.exists():
-        return "demo_manifest.json missing; run: python scripts/prewarm_replay.py"
+        return "demo_manifest.json missing; run: python scripts/prewarm_replay.py --dry-run"
     try:
         payload = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -91,10 +91,12 @@ def arc_readiness() -> str:
     expected = int(payload.get("expected", 0) or 0)
     completed = len(payload.get("completed", []) or [])
     profile_matches = payload.get("model_profile") == model_profile()
+    verified = bool(payload.get("replay_verified"))
+    ready = bool(payload.get("ready")) and profile_matches and verified
     parts = [f"{completed}/{expected} curated cases warmed"]
     parts.append("profile matches" if profile_matches else "PROFILE CHANGED since prewarm")
-    parts.append("replay verified" if payload.get("replay_verified") else "replay NOT verified")
-    parts.append("ready" if payload.get("ready") else "NOT ready")
+    parts.append("replay verified" if verified else "replay NOT verified")
+    parts.append("ready" if ready else "NOT ready")
     return ", ".join(parts)
 
 

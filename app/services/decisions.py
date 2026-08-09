@@ -123,6 +123,85 @@ def comment_hash_for(decision_id: str, conn: sqlite3.Connection) -> str:
     return (row[0] if row else "") or hash_payload({"comment": "", "approver": ""})
 
 
+def advance_onchain_decision(
+    client: ChainClient,
+    onchain_decision_id: int,
+    risk: str,
+    *,
+    approved: bool | None = None,
+    comment_hash: str = "",
+    initial_state: str = "",
+) -> tuple[str, str]:
+    """Advance the contract lifecycle after submission, idempotently.
+
+    Approval and anchoring are separate UI actions and can happen in either order. The old API
+    mirrored an approval only when approval happened *after* anchoring; approve-first/anchor-second
+    left the contract permanently Proposed. Low-risk decisions were never finalized either. This
+    reconciles both orderings while retaining the contract's human gate for medium/high risk.
+
+    Returns ``(state, reason)``. A non-empty reason means the proof is anchored but a later
+    lifecycle transaction could not be completed.
+    """
+
+    def observed(default: str) -> str:
+        record = client.get_decision(onchain_decision_id) or {}
+        state = str(record.get("state", "") or "").lower()
+        return "proposed" if state == "submitted" else (state or default)
+
+    state = (initial_state or "").lower()
+    state = "proposed" if state in {"", "submitted"} else state
+    if state in {"finalized", "rejected"}:
+        return state, ""
+
+    if state == "proposed" and approved is not None:
+        approval = client.approve_decision(
+            onchain_decision_id,
+            approved,
+            comment_hash or hash_payload({"comment": "", "approver": ""}),
+        )
+        if not approval.anchored:
+            current = observed(state)
+            if current == state:
+                return state, f"approval sync failed: {approval.reason}"
+            state = current
+        else:
+            state = "approved" if approved else "rejected"
+
+    if state == "rejected":
+        return state, ""
+
+    should_finalize = state == "approved" or (
+        state == "proposed" and risk.lower() == "low" and approved is None
+    )
+    if should_finalize:
+        final = client.finalize_decision(onchain_decision_id)
+        if final.anchored:
+            return "finalized", ""
+        current = observed(state)
+        if current == "finalized":
+            return current, ""
+        return current, f"finalization failed: {final.reason}"
+
+    return state, ""
+
+
+def update_onchain_state(
+    conn: sqlite3.Connection, decision_id: str, onchain_decision_id: int, state: str
+) -> None:
+    """Persist a witnessed contract state for zero-RPC Proof reloads."""
+    conn.execute(
+        """UPDATE blockchain_proofs SET onchain_state = ?, onchain_decision_id = ?
+           WHERE proof_id = (
+               SELECT proof_id FROM blockchain_proofs
+               WHERE decision_id = ?
+                 AND (COALESCE(tx_hash, '') != '' OR onchain_decision_id IS NOT NULL)
+               ORDER BY created_at DESC, rowid DESC LIMIT 1
+           )""",
+        (state, onchain_decision_id, decision_id),
+    )
+    conn.commit()
+
+
 def anchor_decision(
     conn: sqlite3.Connection,
     decision_id: str,
@@ -153,8 +232,9 @@ def anchor_decision(
         """
         INSERT INTO blockchain_proofs (
             proof_id, decision_id, chain_id, contract_address, tx_hash, block_number,
-            agent_address, evidence_hash, output_hash, onchain_state, anchored_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?, datetime('now'))
+            agent_address, evidence_hash, output_hash, onchain_decision_id, onchain_state,
+            anchored_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?, datetime('now'))
         """,
         (
             _new_id("PRF"),
@@ -166,7 +246,8 @@ def anchor_decision(
             anchor.agent_address,
             state.evidence_hash,
             state.output_hash,
-            "submitted" if anchor.anchored else "unanchored",
+            anchor.decision_id,
+            (anchor.onchain_state or "proposed") if anchor.anchored else "unanchored",
         ),
     )
     conn.commit()
@@ -199,28 +280,33 @@ def verify_decision(
     """
     row = conn.execute(
         """
-        SELECT d.evidence_hash, d.output_hash, p.tx_hash, p.chain_id, p.contract_address
+        SELECT d.evidence_hash, d.output_hash, p.tx_hash, p.chain_id, p.contract_address,
+               p.onchain_decision_id
         FROM decisions d
         LEFT JOIN blockchain_proofs p ON p.decision_id = d.decision_id
         WHERE d.decision_id = ?
-        ORDER BY p.created_at DESC LIMIT 1
+        ORDER BY
+            CASE WHEN COALESCE(p.tx_hash, '') != '' OR p.onchain_decision_id IS NOT NULL
+                 THEN 0 ELSE 1 END,
+            p.created_at DESC, p.rowid DESC
+        LIMIT 1
         """,
         (decision_id,),
     ).fetchone()
     if row is None:
         return {"decision_id": decision_id, "found": False}
 
-    evidence_hash, output_hash, tx_hash, chain_id, contract = row
+    evidence_hash, output_hash, tx_hash, chain_id, contract, stored_onchain_id = row
     available = bool(client is not None and client.available)
-    onchain_id = None
+    onchain_id = int(stored_onchain_id) if stored_onchain_id else None
     if available:
-        onchain_id = client._proof.functions.findByFingerprint(  # noqa: SLF001
+        onchain_id = onchain_id or client.find_by_fingerprint(
             conn.execute(
                 "SELECT incident_id FROM decisions WHERE decision_id = ?", (decision_id,)
             ).fetchone()[0],
-            client._to_bytes32(evidence_hash),
-            client._to_bytes32(output_hash),
-        ).call()
+            evidence_hash,
+            output_hash,
+        )
 
     valid = (
         client.verify(int(onchain_id), evidence_hash, output_hash)
@@ -236,7 +322,7 @@ def verify_decision(
         "tx_hash": tx_hash,
         "chain_id": chain_id,
         "contract_address": contract,
-        "onchain_decision_id": int(onchain_id) if onchain_id else None,
+        "onchain_decision_id": onchain_id,
         "valid": valid,
         "chain_available": available,
     }

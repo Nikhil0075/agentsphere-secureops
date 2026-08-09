@@ -43,18 +43,29 @@ LOW_CONFIDENCE = 0.40
 #: overreaching. Above this, thinness becomes a genuine concern.
 GAP_TOLERANCE = 3
 
+# The model may contribute semantic judgement only through this small, documented vocabulary.
+# Deterministic VER-* checks below remain authoritative for set membership and policy lookups.
+SEMANTIC_CHECKS = {
+    "SEM-001": "Evidence directly contradicts the assigned label or stated rationale",
+    "SEM-002": "The agent chain materially contradicts itself",
+    "SEM-003": "The recommended action is unsupported or disproportionate",
+    "SEM-004": "Confidence is materially miscalibrated to the evidence and stated gaps",
+}
+SEMANTIC_REJECT_CHECKS = frozenset({"SEM-001", "SEM-002"})
+
 
 class VerifierAgent(Agent):
     name = "verifier"
     output_model = VerifierOutput
     role = (
-        "Independent verification. You did not produce any of the outputs you are checking and "
-        "you are not on the same side as the agents that did. Look for contradictions between "
-        "steps, conclusions that outrun their evidence, confidence that does not match the "
-        "evidence quality, and remediation that is disproportionate to the finding. Reject when "
-        "the chain does not hold up, escalate when it is unresolvable from what is here, and "
-        "accept only when the reasoning is genuinely supported. Accepting a weak chain is a "
-        "worse failure than rejecting a sound one."
+        "Independent consistency and safety verification. Do not re-run triage and do not decide "
+        "whether an action may auto-execute; the deterministic policy gate does that. Check "
+        "direct evidence contradiction, internal chain consistency, action proportionality, and "
+        "confidence calibration using only SEM-001 through SEM-004. Accept means safe to send to "
+        "the deterministic gate, not that the label is certain. Sparse or anonymised fields, an "
+        "unexplained baseline, missing evidence outside the correlation bundle, and lack of "
+        "affirmative proof of benignity are not contradictions by themselves; uncertainty should "
+        "already be represented by confidence."
     )
 
     def build_context(self, state: WorkflowState, context: IncidentContext = None, **kwargs):
@@ -150,9 +161,72 @@ class VerifierAgent(Agent):
             f"{context['baseline_confidence']:.2f}\n"
             f"Agents that degraded to a fallback: "
             f"{', '.join(context['degraded_agents']) or 'none'}\n\n"
-            "Return verdict (accept/reject/escalate), the specific contradictions you found, "
-            "policy_checks, whether escalation is required, and your reasoning."
+            "Run exactly these four semantic checks and return each id exactly once:\n"
+            "- SEM-001: fail only when supplied evidence directly contradicts the label or its "
+            "rationale; missing affirmative proof is not a contradiction.\n"
+            "- SEM-002: fail only for a material contradiction between agent outputs.\n"
+            "- SEM-003: fail only when the simulated action is materially unsupported or "
+            "disproportionate; catalogue membership and applicability are checked in code.\n"
+            "- SEM-004: fail only when confidence materially overstates the supplied evidence and "
+            "reported gaps; low confidence is not itself a contradiction.\n\n"
+            "Use accept when all four pass. Use reject only for failed SEM-001 or SEM-002. Use "
+            "escalate for failed SEM-003 or SEM-004 without a direct contradiction. Put only "
+            "material contradictions tied to failed checks in contradictions. Return verdict, "
+            "contradictions, policy_checks, escalation_required, and reasoning."
         )
+
+    def validate_grounding(self, output: VerifierOutput, context: dict) -> None:
+        """Require the semantic rubric before accepting a model-produced verifier result.
+
+        The frozen schema can only say ``policy_id: str``. This content guardrail supplies the
+        missing enum without changing that contract, so an omitted rubric gets one normal agent
+        retry and then the conservative structural fallback. Deterministic output carries VER-*
+        checks instead and is already the structural result, so it is accepted directly.
+        """
+        super().validate_grounding(output, context)
+        ids = [check.policy_id for check in output.policy_checks]
+        if all(f"VER-{index:03d}" in ids for index in range(1, 8)):
+            return
+        missing = sorted(set(SEMANTIC_CHECKS) - set(ids))
+        duplicates = sorted(
+            policy_id for policy_id in SEMANTIC_CHECKS if ids.count(policy_id) > 1
+        )
+        if missing or duplicates:
+            problems = []
+            if missing:
+                problems.append("missing " + ", ".join(missing))
+            if duplicates:
+                problems.append("duplicated " + ", ".join(duplicates))
+            raise ValueError("invalid verifier semantic rubric: " + "; ".join(problems))
+
+        failed = {
+            check.policy_id
+            for check in output.policy_checks
+            if check.policy_id in SEMANTIC_CHECKS and not check.passed
+        }
+        expected = (
+            VerifierVerdict.REJECT
+            if failed & SEMANTIC_REJECT_CHECKS
+            else VerifierVerdict.ESCALATE
+            if failed
+            else VerifierVerdict.ACCEPT
+        )
+        if output.verdict is not expected:
+            raise ValueError(
+                f"verdict {output.verdict.value} conflicts with semantic checks; "
+                f"expected {expected.value}"
+            )
+        expected_escalation = expected is not VerifierVerdict.ACCEPT
+        if output.escalation_required != expected_escalation:
+            raise ValueError("escalation_required conflicts with the semantic verdict")
+        direct_contradiction = bool(failed & SEMANTIC_REJECT_CHECKS)
+        if direct_contradiction and not output.contradictions:
+            raise ValueError("failed SEM-001/SEM-002 requires a material contradiction")
+        if not direct_contradiction and output.contradictions:
+            raise ValueError(
+                "contradictions require failed SEM-001/SEM-002; SEM-003/SEM-004 are "
+                "escalation concerns"
+            )
 
     # --- reconciliation: the structural checks always run --------------------------------
 
@@ -166,14 +240,14 @@ class VerifierAgent(Agent):
         that accepts everything.
 
         So the structural checks run in code on every backend, and the model's judgement is
-        layered on top under two rules:
+        layered on top under three rules:
 
         * a hard structural failure is a rejection, whatever the model concluded;
-        * the model may not *reject* without a hard structural failure to point at — it may
-          escalate instead, which routes to a human without corrupting the rejection rate.
+        * semantic judgement is actionable only through the fixed SEM-* rubric;
+        * vague uncertainty and invented policy ids remain visible but cannot create a hidden
+          autonomy rule.
 
-        The model's own checks are kept, prefixed ``LLM-``, so its reasoning stays visible and
-        auditable rather than being silently discarded.
+        Unknown model checks are kept with an ``LLM-`` prefix so the audit remains complete.
         """
         structural = self._structural(context)
         structural_ids = {c.policy_id for c in structural.policy_checks}
@@ -183,28 +257,67 @@ class VerifierAgent(Agent):
         # structural pass already produced is dropped rather than duplicated.
         model_checks = [
             PolicyCheck(
-                policy_id=f"LLM-{c.policy_id}"[:64],
+                policy_id=(
+                    c.policy_id
+                    if c.policy_id in SEMANTIC_CHECKS
+                    else f"LLM-{c.policy_id}"
+                )[:64],
                 passed=c.passed,
                 detail=c.detail,
             )
             for c in output.policy_checks
             if c.policy_id not in structural_ids
         ]
+        supplied_semantic = {
+            check.policy_id: check
+            for check in output.policy_checks
+            if check.policy_id in SEMANTIC_CHECKS
+        }
+        output_ids = {check.policy_id for check in output.policy_checks}
+        is_structural_output = structural_ids <= output_ids
+        failed_semantic = {
+            policy_id
+            for policy_id, check in supplied_semantic.items()
+            if not check.passed
+        }
+        missing_semantic = (
+            set() if is_structural_output else set(SEMANTIC_CHECKS) - set(supplied_semantic)
+        )
         seen_contradictions = set(structural.contradictions)
-        model_contradictions = [
-            c for c in output.contradictions if c not in seen_contradictions
-        ]
+        model_contradictions = (
+            [c for c in output.contradictions if c not in seen_contradictions]
+            if failed_semantic
+            else []
+        )
 
         if structural.verdict is VerifierVerdict.REJECT:
             verdict = VerifierVerdict.REJECT
-        elif output.verdict is VerifierVerdict.REJECT:
-            # The model wants to reject but nothing structural supports it. Escalate: a human
-            # looks at it, and the rejection rate keeps meaning what it says.
-            verdict = VerifierVerdict.ESCALATE
         elif structural.verdict is VerifierVerdict.ESCALATE:
             verdict = VerifierVerdict.ESCALATE
+        elif failed_semantic & SEMANTIC_REJECT_CHECKS:
+            verdict = VerifierVerdict.REJECT
+        elif failed_semantic or missing_semantic:
+            verdict = VerifierVerdict.ESCALATE
         else:
-            verdict = output.verdict
+            # Raw reject/escalate without a failed named check is not a policy. All semantic
+            # checks passed, so the chain is safe to hand to the deterministic gate.
+            verdict = VerifierVerdict.ACCEPT
+
+        if missing_semantic:
+            model_checks.append(
+                PolicyCheck(
+                    policy_id="SEM-000",
+                    passed=False,
+                    detail=(
+                        "missing required semantic checks: "
+                        + ", ".join(sorted(missing_semantic))
+                    ),
+                )
+            )
+            model_contradictions.append(
+                "Verifier omitted required semantic checks: "
+                + ", ".join(sorted(missing_semantic))
+            )
 
         return VerifierOutput(
             verdict=verdict,

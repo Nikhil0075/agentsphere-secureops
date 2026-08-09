@@ -116,7 +116,8 @@ CREATE TABLE IF NOT EXISTS blockchain_proofs (
     agent_address   TEXT,
     evidence_hash   TEXT,
     output_hash     TEXT,
-    onchain_state   TEXT,               -- submitted|approved|finalized
+    onchain_decision_id INTEGER,
+    onchain_state   TEXT,               -- proposed|approved|rejected|finalized|unanchored
     anchored_at     TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );

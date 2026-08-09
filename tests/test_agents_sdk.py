@@ -58,6 +58,9 @@ def test_agents_sdk_uses_typed_output_bounded_tools_and_redacted_trace(monkeypat
 
     captured = {}
 
+    def fake_set_tracing_disabled(disabled):
+        captured["tracing_globally_disabled"] = disabled
+
     def fake_run(starting_agent, prompt, **kwargs):
         captured["agent"] = starting_agent
         captured["prompt"] = prompt
@@ -65,6 +68,7 @@ def test_agents_sdk_uses_typed_output_bounded_tools_and_redacted_trace(monkeypat
         return FakeResult(detection_output())
 
     monkeypatch.setattr(agents.Runner, "run_sync", staticmethod(fake_run))
+    monkeypatch.setattr(agents, "set_tracing_disabled", fake_set_tracing_disabled)
     client = AgentsSDKClient(api_key="sk-test", cache=ResponseCache(tmp_path))
     response = client.complete_structured(
         system="bounded system instruction",
@@ -89,6 +93,7 @@ def test_agents_sdk_uses_typed_output_bounded_tools_and_redacted_trace(monkeypat
     }
     assert captured["config"].trace_include_sensitive_data is False
     assert captured["config"].tracing_disabled is True
+    assert captured["tracing_globally_disabled"] is True
     assert response.trace_id == ""
     assert "inspect this incident" not in captured["config"].trace_metadata.values()
 

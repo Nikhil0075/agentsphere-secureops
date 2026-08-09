@@ -46,6 +46,14 @@ def test_the_arc_declares_six_distinct_roles_at_distinct_ranks():
     assert len({role.role for role in DEMO_ARC}) == EXPECTED_ARC_SIZE
     assert len({role.pinned_id for role in DEMO_ARC}) == EXPECTED_ARC_SIZE
     assert [role.rank for role in DEMO_ARC] == list(range(1, EXPECTED_ARC_SIZE + 1))
+    assert {role.rank: role.expected_auto_approved for role in DEMO_ARC} == {
+        1: False,
+        2: False,
+        3: False,
+        4: True,
+        5: True,
+        6: False,
+    }
 
 
 def test_narration_is_ascii():
@@ -190,3 +198,39 @@ def test_the_arc_spans_all_three_labels_and_several_categories(real_incidents):
 
     assert set(arc["label"]) == {"TruePositive", "BenignPositive", "FalsePositive"}
     assert len(set(arc["top_category"])) >= 4
+
+
+def test_the_real_arc_exercises_both_autonomy_outcomes_offline():
+    """The six cases are a control-system demo, not just six different labels.
+
+    Cases 4 and 5 are the bounded low-risk auto path. High-risk cases 1/2, model disagreement in
+    case 3, and low confidence in case 6 each require a human for a different visible reason.
+    """
+    from app.agents.llm import DeterministicClient
+    from app.config import ARTIFACTS
+    from app.data import incidents as incidents_mod
+    from app.orchestration.workflow import Workflow
+    from app.retrieval import hybrid
+    from app.retrieval.base import EntityOverlapRetriever
+    from app.services import scoring
+
+    if not loader.INCIDENTS_PARQUET.exists():
+        pytest.skip("prepared corpus not built; run scripts/prepare_data.py")
+    evidence, incidents = loader.load_prepared()
+    model = scoring.load_baseline()
+    if model is None:
+        pytest.skip("baseline not trained; run scripts/train_baseline.py")
+
+    retriever = hybrid.load_if_available(ARTIFACTS / "index")
+    if retriever is None:
+        retriever = EntityOverlapRetriever(evidence, incidents)
+    workflow = Workflow(client=DeterministicClient(), retriever=retriever)
+    arc = incidents[incidents["demo_rank"].notna()].sort_values("demo_rank")
+
+    outcomes = {}
+    for _, row in arc.iterrows():
+        rows = incidents_mod.evidence_for(evidence, str(row["incident_id"]))
+        result = workflow.run(row, rows, baseline_model=model)
+        outcomes[int(row["demo_rank"])] = not result.state.requires_approval
+
+    assert outcomes == {role.rank: role.expected_auto_approved for role in DEMO_ARC}

@@ -59,6 +59,10 @@ class DemoRole:
     order_by: tuple[tuple[str, bool], ...]
     #: True when the predicate only approximates the role. See the module docstring.
     proxy: bool = False
+    #: Presentation contract for the deterministic gate. This is not a ground-truth label and is
+    #: never shown to an agent; it only verifies that the six-case arc demonstrates both bounded
+    #: autonomy and human authority after the workflow finishes.
+    expected_auto_approved: bool = False
 
 
 def _tp_initial_access_malicious(frame: pd.DataFrame) -> pd.Series:
@@ -110,6 +114,7 @@ DEMO_ARC: Final[tuple[DemoRole, ...]] = (
         ),
         predicate=_tp_initial_access_malicious,
         order_by=(("evidence_count", False), ("incident_id", True)),
+        expected_auto_approved=False,
     ),
     DemoRole(
         rank=2,
@@ -118,6 +123,7 @@ DEMO_ARC: Final[tuple[DemoRole, ...]] = (
         narration="Twenty-one alerts collapse into ten clusters: alert fatigue, measured.",
         predicate=_tp_many_alerts,
         order_by=(("alert_count", False), ("incident_id", True)),
+        expected_auto_approved=False,
     ),
     DemoRole(
         rank=3,
@@ -130,6 +136,7 @@ DEMO_ARC: Final[tuple[DemoRole, ...]] = (
         predicate=_tp_weak_verdict_heavy_evidence,
         order_by=(("evidence_count", False), ("incident_id", True)),
         proxy=True,
+        expected_auto_approved=False,
     ),
     DemoRole(
         rank=4,
@@ -138,6 +145,7 @@ DEMO_ARC: Final[tuple[DemoRole, ...]] = (
         narration="Real activity, authorised. Not every detection is an attack.",
         predicate=_bp_suspicious,
         order_by=(("evidence_count", False), ("incident_id", True)),
+        expected_auto_approved=True,
     ),
     DemoRole(
         rank=5,
@@ -146,6 +154,7 @@ DEMO_ARC: Final[tuple[DemoRole, ...]] = (
         narration="A low-risk false positive: the queue noise this system is meant to suppress.",
         predicate=_fp_discovery,
         order_by=(("evidence_count", True), ("incident_id", True)),
+        expected_auto_approved=True,
     ),
     DemoRole(
         rank=6,
@@ -154,6 +163,7 @@ DEMO_ARC: Final[tuple[DemoRole, ...]] = (
         narration="The bottom of the risk range, in a fourth attack category.",
         predicate=_fp_exfiltration,
         order_by=(("evidence_count", True), ("incident_id", True)),
+        expected_auto_approved=False,
     ),
 )
 

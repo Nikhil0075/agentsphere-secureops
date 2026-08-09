@@ -88,6 +88,13 @@ gate:
   auto_approve:
     max_risk: low
     min_confidence: 0.80
+    dual_agreement:
+      # This is the safe noise-reduction path, never an autonomous compromise response. The live
+      # six-case arc measured BenignPositive at 0.58 and FalsePositive at 0.72; the low-risk TP at
+      # 0.55 remains human-controlled because TruePositive is deliberately excluded.
+      allowed_labels: [BenignPositive, FalsePositive]
+      min_agent_confidence: 0.55
+      min_baseline_confidence: 0.90
     require_verifier_accept: true
     require_no_contradictions: true
 
@@ -105,6 +112,8 @@ policies:
   - id: POL-003
     description: The recommended action must be applicable to the assigned triage label.
   - id: POL-004
-    description: A confidence below 0.80 cannot be auto-approved at any risk level.
+    description: Confidence must meet 0.80, or a benign/false-positive result must meet the bounded agent/baseline agreement rule.
   - id: POL-005
     description: A Verifier verdict of reject or escalate blocks automatic finalisation.
+  - id: POL-006
+    description: Any agent fallback requires human review and blocks automatic finalisation.

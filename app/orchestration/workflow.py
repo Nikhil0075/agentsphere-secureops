@@ -230,6 +230,8 @@ class Workflow:
             remediation=state.remediation,
             verifier=state.verifier,
             evidence_ids=bundle,
+            baseline=state.baseline,
+            degraded_agents=[run.agent for run in state.runs if run.status != "ok"],
         )
         state.requires_approval = gate.requires_approval
 

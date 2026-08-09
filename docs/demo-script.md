@@ -23,8 +23,9 @@ number it produces is real rather than canned — but Triage defers to the basel
 not quote its accuracy as the agents'. **live** is for a judge who asks to watch a real call; be
 ready for the wait, and say plainly that a live run is not bit-reproducible.
 
-If `start.py --check` flags the replay row, run `python scripts/prewarm_replay.py` (it makes paid
-calls) and `python scripts/cache_admin.py --audit` to see what is actually in the cache.
+If `start.py --check` flags the replay row, run `python scripts/prewarm_replay.py --dry-run`, choose
+an explicit paid `--max-live-stages` budget, and then use `python scripts/cache_admin.py --audit`
+to see what is actually in the cache.
 
 ## The demo arc
 
@@ -136,9 +137,11 @@ agents caught it will not believe the rest of the demo.
 That is the argument for the deterministic gate in one screen: the value is not that the models
 are always right, it is that being wrong does not become an action.
 
-If time is short, cases 4–6 can be walked in about twenty seconds with **Next demo**, purely to
-show the spread: a benign positive that is real-but-authorised, and two false positives at the
-bottom of the risk range. It is the same six agents and the same gate reaching different answers.
+If time is short, cases 4–6 can be walked in about twenty seconds with **Next demo**. Cases 4 and 5
+show the bounded autonomous path: the agent and high-confidence baseline agree, the verifier's
+named semantic checks pass, and the reversible low-risk closure is auto-approved. Case 6 looks
+similar but its confidence is too low, so it still goes to a human. It is the same six agents and
+the same deterministic gate reaching visibly different autonomy outcomes.
 
 ## Scene 5 — Proof, then tamper (120s) ← **the moment**
 
@@ -186,9 +189,9 @@ Press **Restore** so the next run is clean.
 | Symptom | Do this |
 |---|---|
 | Workflow is slow or errors | Switch the backend selector to **deterministic**. No network, sub-second. |
-| `start.py --check` flags **demo replay** | `python scripts/prewarm_replay.py` (paid). `python scripts/cache_admin.py --audit` says what is actually in the cache. |
+| `start.py --check` flags **demo replay** | Run `python scripts/prewarm_replay.py --dry-run`, then choose an explicit paid `--max-live-stages` budget. `python scripts/cache_admin.py --audit` says what is actually in the cache. |
 | `start.py --check` flags **demo arc** | `python scripts/prepare_data.py` — the arc columns are missing or a role went unresolved. |
-| A stage says it degraded on replay | That entry failed validation and was evicted; re-run `prewarm_replay.py` to resample just that stage. |
+| A stage says it degraded on replay | That entry failed validation and was evicted; re-run `prewarm_replay.py --max-live-stages 2` to resample under a small explicit budget. |
 | Proof panel says no chain reachable | Say so plainly: "the testnet is unreachable, so the panel degrades — the workflow, the gate and the digests are unaffected." That is the designed behaviour, not a failure. |
 | Tamper shows VALID | You are on a decision that was never anchored. Press **Anchor proof on chain** first. |
 | Proof tab says "no decision yet" | Run the workflow first — Proof reads the decision that run produced. The button on that screen takes you there. |
@@ -205,10 +208,10 @@ Short answers; the long ones are in §12.3 of the master plan.
   an unauthorised writer at the storage layer, block finalisation of a high-risk action without a
   human, and detect tampering by the party who operates the storage. All three are demonstrable
   above.
-- **What if the LLM is wrong?** The Verifier's structural checks run in code on every backend, the
-  gate is deterministic, and all remediation is simulated. Measured: on 40 live incidents the model
-  wanted to reject 40 of them; the structural layer converted that to 39 escalations and 1
-  rejection, because "I am uneasy" is not a rejection.
+- **What if the LLM is wrong?** The Verifier's seven structural checks run in code on every
+  backend, and its model judgement is bounded to four named semantic checks. Generic uncertainty
+  cannot invent a new blocking policy. The gate is deterministic, every fallback forces human
+  review, and all remediation is simulated.
 - **Is this just an LLM wrapper?** The non-LLM baseline, the policy engine, Union-Find, the capped
   BFS, Dijkstra on −log(confidence) and the contract-level authorisation are all outside the model.
 - **How much was built during the hackathon?** All of it; the commit history covers the build

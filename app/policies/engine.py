@@ -16,6 +16,7 @@ from typing import Any
 import yaml
 
 from app.agents.schemas import (
+    BaselinePrediction,
     PolicyCheck,
     RemediationOutput,
     RiskLevel,
@@ -83,6 +84,8 @@ def evaluate(
     remediation: RemediationOutput,
     verifier: VerifierOutput | None = None,
     evidence_ids: list[str] | None = None,
+    baseline: BaselinePrediction | None = None,
+    degraded_agents: list[str] | None = None,
 ) -> GateDecision:
     """Decide whether a recommendation may proceed without a human.
 
@@ -134,13 +137,35 @@ def evaluate(
     if not cited_ok:
         reasons.append("triage cites evidence that is not in the bundle")
 
-    # POL-004: a confidence floor applies at every risk level.
-    confident = triage.confidence >= float(auto["min_confidence"])
+    # POL-004: normal confidence floor, plus a narrow deterministic ensemble path. Two
+    # independent classifiers agreeing strongly on a low-risk reversible outcome is different
+    # from lowering the confidence floor globally. Risk, citation and verifier checks still apply.
+    standard_confident = triage.confidence >= float(auto["min_confidence"])
+    dual = auto.get("dual_agreement", {})
+    dual_labels = set(dual.get("allowed_labels", []))
+    dual_confident = bool(
+        baseline is not None
+        and triage.label.value in dual_labels
+        and baseline.label == triage.label
+        and triage.confidence >= float(dual.get("min_agent_confidence", 1.01))
+        and baseline.confidence >= float(dual.get("min_baseline_confidence", 1.01))
+    )
+    confident = standard_confident or dual_confident
+    confidence_detail = (
+        f"confidence {triage.confidence:.2f} vs floor {auto['min_confidence']:.2f}"
+        if standard_confident
+        else (
+            f"dual agreement: agent {triage.confidence:.2f} {triage.label.value}, baseline "
+            f"{baseline.confidence:.2f} {baseline.label.value}"
+            if dual_confident and baseline is not None
+            else f"confidence {triage.confidence:.2f} below floor and no qualifying dual agreement"
+        )
+    )
     checks.append(
         PolicyCheck(
             policy_id="POL-004",
             passed=confident,
-            detail=f"confidence {triage.confidence:.2f} vs floor {auto['min_confidence']:.2f}",
+            detail=confidence_detail,
         )
     )
     if not confident:
@@ -173,10 +198,30 @@ def evaluate(
     if not risk_ok:
         reasons.append(f"{action_risk}-risk action requires a named human approver")
 
+    # POL-006: a fallback is useful for continuity, but it is not an autonomous decision. This
+    # explicitly covers a Verifier fallback, which cannot observe its own run status while it is
+    # constructing its output.
+    degraded = sorted(set(degraded_agents or []))
+    reliable = not degraded
+    checks.append(
+        PolicyCheck(
+            policy_id="POL-006",
+            passed=reliable,
+            detail=(
+                "all agent stages completed normally"
+                if reliable
+                else "fallback used by: " + ", ".join(degraded)
+            ),
+        )
+    )
+    if not reliable:
+        reasons.append("a degraded agent stage requires human review")
+
     forced = (
         action_risk in force["risk_levels"]
         or (verifier is not None and verifier.verdict.value in force["verifier_verdicts"])
-        or triage.confidence < float(force["below_confidence"])
+        or not confident
+        or not reliable
     )
     no_contradictions = verifier is not None and not verifier.contradictions
 
@@ -186,6 +231,7 @@ def evaluate(
         and confident
         and cited_ok
         and applicable
+        and reliable
         and (verifier_ok or not auto["require_verifier_accept"])
         and (no_contradictions or not auto["require_no_contradictions"])
     )

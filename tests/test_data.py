@@ -113,6 +113,24 @@ def test_evidence_block_cites_evidence_ids(evidence, incident_table):
     assert f"[{rows['evidence_id'].iloc[0]}]" in block
 
 
+def test_evidence_block_omits_missing_value_sentinels():
+    rows = pd.DataFrame(
+        [
+            {
+                "evidence_id": "EVD-1",
+                "alert_id": "ALT-1",
+                "suspicion_level": float("nan"),
+                "last_verdict": pd.NA,
+                "device_id": "device-1",
+            }
+        ]
+    )
+    block = build_evidence_block(rows)
+    assert "device_id=device-1" in block
+    assert "nan" not in block.lower()
+    assert "<na>" not in block.lower()
+
+
 def test_drop_unusable_removes_duplicates_and_missing(evidence):
     dirty = pd.concat([evidence, evidence.head(3)], ignore_index=True)
     dirty.loc[dirty.index[-1], "incident_ref"] = None

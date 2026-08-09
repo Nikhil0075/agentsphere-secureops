@@ -33,7 +33,7 @@ flowchart TB
     end
 
     subgraph control["Deterministic controls"]
-        gate["Policy gate<br/>POL-001..005 — not an LLM"]
+        gate["Policy gate<br/>POL-001..006 — not an LLM"]
         human["Human approval<br/>required for medium/high risk"]
     end
 
