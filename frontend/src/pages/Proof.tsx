@@ -11,7 +11,7 @@ import {
   Spinner,
 } from "../components/primitives";
 import { AgentRegistryPanel } from "../components/proof/AgentRegistryPanel";
-import { AnchorLifecycle } from "../components/proof/AnchorLifecycle";
+import { AnchorJourney } from "../components/proof/AnchorJourney";
 import { ChainFacts } from "../components/proof/ChainFacts";
 import { OnChainVsOffChain } from "../components/proof/OnChainVsOffChain";
 import { TamperDiff, type TamperChange } from "../components/proof/TamperDiff";
@@ -69,12 +69,16 @@ export function Proof({
       .finally(() => setBusy(""));
   }, [decisionId]);
 
-  const act = async (what: string, fn: () => Promise<unknown>) => {
+  const act = async (
+    what: string,
+    fn: () => Promise<unknown>,
+    refreshAfter = true,
+  ) => {
     setBusy(what);
     setError("");
     try {
       await fn();
-      await refresh();
+      if (refreshAfter) await refresh();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -170,7 +174,7 @@ export function Proof({
 
       {lastChange && <TamperDiff change={lastChange} integrity={integrity} />}
 
-      <AnchorLifecycle proof={proof} />
+      <AnchorJourney proof={proof} integrity={integrity} />
 
       <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
         <Card
@@ -249,8 +253,11 @@ export function Proof({
             confirming={busy === "confirm"}
             onConfirm={() =>
               act("confirm", async () => {
+                // Keep the explicit RPC response. The generic post-action refresh calls the
+                // zero-RPC proof route and used to overwrite `chain_checked: true` immediately,
+                // making the button appear to do nothing even after a successful contract read.
                 setProof(await api.proof(decisionId, { check_chain: true }));
-              })
+              }, false)
             }
           />
         </div>

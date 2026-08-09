@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -126,6 +126,34 @@ describe("proof screen", () => {
     expect(screen.getByText("218,455")).toBeInTheDocument();
   });
 
+  it("shows a recovered content-addressed anchor as submitted, not refused", async () => {
+    apiMock.proof.mockResolvedValue({
+      ...proof,
+      tx_hash: "",
+      block_number: null,
+      gas_used: null,
+      explorer_url: "",
+      onchain_decision_id: 21,
+      onchain_state: "finalized",
+      attempts: [
+        {
+          ...proof.attempts[0],
+          tx_hash: "",
+          block_number: null,
+          gas_used: null,
+          onchain_state: "submitted",
+        },
+      ],
+    });
+
+    render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
+
+    expect(await screen.findByText("existing decision #21")).toBeInTheDocument();
+    expect(screen.getByText("state committed on chain")).toBeInTheDocument();
+    expect(screen.queryByText("refused by the chain")).not.toBeInTheDocument();
+    expect(screen.queryByText("Anchor failed")).not.toBeInTheDocument();
+  });
+
   it("lists every registered agent and marks the signer", async () => {
     render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
     expect(await screen.findByText("triage")).toBeInTheDocument();
@@ -135,6 +163,9 @@ describe("proof screen", () => {
 
   it("reaches the contract only when explicitly asked", async () => {
     const user = userEvent.setup();
+    apiMock.proof
+      .mockResolvedValueOnce(proof)
+      .mockResolvedValueOnce({ ...proof, chain_checked: true, valid: true });
     render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
     await screen.findByText("VALID");
 
@@ -142,6 +173,8 @@ describe("proof screen", () => {
     await waitFor(() =>
       expect(apiMock.proof).toHaveBeenCalledWith(DECISION, { check_chain: true }),
     );
+    expect(await screen.findByText("match")).toBeInTheDocument();
+    expect(apiMock.proof).toHaveBeenCalledTimes(2);
   });
 
   it("shows the before/after diff when the record is tampered", async () => {
@@ -185,6 +218,147 @@ describe("proof screen", () => {
     expect(
       screen.getByText(/Detect tampering by the party operating the storage/),
     ).toBeInTheDocument();
+  });
+
+  // --- the anchoring journey -------------------------------------------------------------------
+
+  it("lays out the whole path from stored record to contract storage", async () => {
+    render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
+    await screen.findByText("VALID");
+
+    const labels = [
+      "Stored record",
+      "Canonicalised",
+      "keccak256",
+      "Transaction",
+      "Block",
+      "Decision slot",
+    ];
+    labels.forEach((label, index) => {
+      // By accessible name, because several of these words also appear as field labels elsewhere
+      // on the page -- "Transaction" and "Block" both do.
+      expect(
+        screen.getByRole("button", { name: `Stage ${index + 1}: ${label}` }),
+      ).toBeInTheDocument();
+    });
+    // The boundary is the claim the panel exists to make: only digests cross it.
+    expect(screen.getByText("boundary")).toBeInTheDocument();
+    expect(screen.getByText("stage 1 of 6")).toBeInTheDocument();
+  });
+
+  it("marks the diverging bytes when the record no longer hashes to the anchor", async () => {
+    const anchored = `0x${"11".repeat(32)}`;
+    // Same digest with three bytes moved -- the visible difference is the point.
+    const recomputed = `0x${"11".repeat(29)}${"ff".repeat(3)}`;
+    apiMock.verify.mockResolvedValue({
+      ...integrity,
+      anchored_output_hash: anchored,
+      recomputed_output_hash: recomputed,
+      output_valid: false,
+      valid: false,
+      tampered: ["agent output"],
+      tamper_active: true,
+    });
+
+    const user = userEvent.setup();
+    render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
+    await screen.findByText("TAMPERED");
+
+    // Visible on the rail without touching anything.
+    expect(screen.getByText("3 of 32 bytes differ")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Stage 3: keccak256" }));
+    const grid = await screen.findByLabelText(/32 bytes, 3 differing from the anchored digest/);
+    expect(grid.querySelectorAll('[data-changed="true"]')).toHaveLength(3);
+  });
+
+  it("marks nothing when the digests still agree", async () => {
+    const digest = `0x${"ab".repeat(32)}`;
+    apiMock.verify.mockResolvedValue({
+      ...integrity,
+      anchored_output_hash: digest,
+      recomputed_output_hash: digest,
+    });
+
+    const user = userEvent.setup();
+    render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
+    await screen.findByText("VALID");
+    expect(screen.getByText("32 bytes, matching")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Stage 3: keccak256" }));
+    const grid = await screen.findByLabelText(/32 bytes, 0 differing from the anchored digest/);
+    expect(grid.querySelectorAll('[data-changed="true"]')).toHaveLength(0);
+  });
+
+  it("walks the stages on play and stops the moment a stage is clicked", async () => {
+    render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
+    await screen.findByText("VALID");
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByLabelText("Play the walkthrough"));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2300);
+      });
+      expect(screen.getByText("stage 2 of 6")).toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2300);
+      });
+      expect(screen.getByText("stage 3 of 6")).toBeInTheDocument();
+
+      // A timer that keeps moving while someone is mid-sentence is a liability on stage.
+      fireEvent.click(screen.getByRole("button", { name: "Stage 5: Block" }));
+      expect(screen.getByText("stage 5 of 6")).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+      });
+      expect(screen.getByText("stage 5 of 6")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows where a decision stopped without needing a click", async () => {
+    apiMock.proof.mockResolvedValue({
+      ...proof,
+      onchain_state: "",
+      approval: { approver: "anaya.rao", approved: false, recorded_at: "2026-08-09", comment: "" },
+    });
+
+    render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
+    await screen.findByText("VALID");
+
+    // A rejection recorded locally is not the same as an un-reviewed decision, and the contract
+    // will never finalise it -- both facts readable from the rail.
+    expect(screen.getByText("a rejected decision is never finalised")).toBeInTheDocument();
+    expect(screen.getByText(/Rejected by anaya.rao/)).toBeInTheDocument();
+  });
+
+  it("does not auto-advance when the system asks for reduced motion", async () => {
+    // A timed walkthrough is exactly the kind of motion the setting exists to suppress, and the
+    // CSS reduced-motion block cannot reach a JavaScript timer.
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes("prefers-reduced-motion"),
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+
+    try {
+      render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
+      await screen.findByText("VALID");
+      // The stages stay clickable; only the timer is withheld.
+      expect(screen.getByLabelText("Play the walkthrough")).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Stage 4: Transaction" })).toBeEnabled();
+    } finally {
+      window.matchMedia = original;
+    }
   });
 
   it("prompts for a workflow when there is no decision", () => {
