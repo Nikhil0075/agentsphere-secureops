@@ -1,221 +1,277 @@
 # AgentSphere SecureOps — architecture
 
-Submission-quality diagrams. Mermaid renders on GitHub and in Devpost's markdown, and stays
-editable, which a PNG does not.
+These diagrams use Mermaid so they render on GitHub and remain editable. The central boundary is
+simple: evidence, prompts, and rationales stay off chain; only digests, identities, and approval
+state cross into the public proof layer.
 
 ## 1. System architecture
 
-The load-bearing line in this diagram is the dashed one. Evidence, prompts and rationales stay
-left of it; only digests, identities and approval state cross to the right. That split is what
-lets the audit trail be tamper-evident without putting security data on a public chain.
-
 ```mermaid
 flowchart TB
-    subgraph data["Data layer"]
+    subgraph dataLayer["Data layer"]
         guide[("Microsoft GUIDE<br/>5,000 incidents<br/>591,340 evidence rows")]
-        prep["prepare_data.py<br/>sentinel masking, deterministic splits"]
-        parquet[("Parquet<br/>evidence + incidents")]
+        prep["prepare_data.py<br/>sentinel masking and deterministic splits"]
+        parquet[("Parquet<br/>incidents and evidence")]
         guide --> prep --> parquet
     end
 
-    subgraph intel["Analysis"]
-        baseline["LightGBM baseline<br/>non-LLM comparison point"]
-        index["Hybrid retrieval<br/>BM25 + FAISS, fused by RRF k=60"]
-        graph["Entity graph<br/>96,351 nodes / 26,194 edges"]
+    subgraph analysisLayer["Deterministic analysis"]
+        baseline["LightGBM baseline<br/>independent comparison point"]
+        retrieval["Hybrid retrieval<br/>BM25 + vectors + RRF k=60"]
+        entityGraph["Entity graph<br/>Union-Find, capped BFS, Dijkstra"]
         parquet --> baseline
-        parquet --> index
-        parquet --> graph
+        parquet --> retrieval
+        parquet --> entityGraph
     end
 
-    subgraph agents["Agent workforce"]
-        direction LR
-        d["Detection"] --> c["Correlation"] --> i["Investigation"] --> t["Triage"] --> r["Remediation"] --> v["Verifier"]
+    subgraph agentLayer["Bounded agent workflow"]
+        mode{"Execution mode"}
+        replay["Validated replay<br/>default demo path"]
+        live["OpenAI Agents SDK<br/>typed Agent + Runner"]
+        offline["Deterministic fallback"]
+        pipeline["Detection → Correlation → Investigation<br/>→ Triage → Remediation → Verifier"]
+        mode --> replay --> pipeline
+        mode --> live --> pipeline
+        mode --> offline --> pipeline
     end
 
-    subgraph control["Deterministic controls"]
-        gate["Policy gate<br/>POL-001..006 — not an LLM"]
-        human["Human approval<br/>required for medium/high risk"]
+    subgraph controlLayer["Deterministic controls"]
+        guardrails["Schema and grounding guardrails<br/>bounded retry, then marked fallback"]
+        gate["Policy gate<br/>POL-001..006 — never an LLM"]
+        human["Human approval<br/>for unsafe or uncertain outcomes"]
+        guardrails --> gate --> human
     end
 
-    subgraph store["Application database (SQLite)"]
-        db[("incidents · evidence · agent_runs<br/>decisions · approvals · proofs")]
+    subgraph appLayer["Application"]
+        api["FastAPI"]
+        ui["React workspace<br/>Queue → Incident → Workflow → Proof → Metrics"]
+        sqlite[("SQLite<br/>evidence, runs, decisions, approvals, proofs")]
+        api <--> ui
+        api <--> sqlite
     end
 
-    subgraph chain["Public chain (Sepolia)"]
-        registry["AgentRegistry<br/>who may submit"]
-        proof["DecisionProof<br/>digests · approval · finalisation"]
+    subgraph chainLayer["Public proof layer — Sepolia"]
+        registry["AgentRegistry<br/>authorised submitters"]
+        proof["DecisionProof<br/>digests, approval, finalisation"]
         registry --- proof
     end
 
-    ui["React + FastAPI<br/>queue · workflow · approval · proof"]
-
-    baseline --> agents
-    index --> agents
-    graph --> agents
-    agents --> gate --> human
-    agents --> db
-    gate --> db
-    db -.->|"keccak256 digests only<br/>never evidence or prompts"| proof
+    baseline --> pipeline
+    retrieval --> pipeline
+    entityGraph --> pipeline
+    pipeline --> guardrails
+    pipeline --> sqlite
+    gate --> sqlite
+    sqlite -.->|keccak256 digests only<br/>never evidence or prompts| proof
     human --> proof
-    db --> ui
-    proof --> ui
+    proof --> api
 
     classDef chainStyle fill:#1a2332,stroke:#4a9eff,color:#e6edf3
     classDef controlStyle fill:#2a1f1a,stroke:#ff9e4a,color:#e6edf3
     class registry,proof chainStyle
-    class gate,human controlStyle
+    class guardrails,gate,human controlStyle
 ```
 
-## 2. End-to-end flow
+The six stages are deliberately orchestrated in a fixed order. The SDK does not receive an
+unrestricted controller role, raw dataset labels, or write tools. Retrieval and graph tools are
+read-only and bounded, and every model output must satisfy its Pydantic contract.
 
-Numbered to match §8.7 of the master plan. Steps 2–9 are deterministic algorithms; only 10 is a
-model call, which is the answer to "is this just an LLM wrapper?".
+## 2. End-to-end decision flow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant A as Analyst
-    participant Q as Risk queue
-    participant G as Entity graph
-    participant R as Retrieval
-    participant W as Agent chain
-    participant P as Policy gate
-    participant C as DecisionProof
+    actor Analyst
+    participant API as FastAPI workflow
+    participant Context as Deterministic context
+    participant SDK as Agents SDK / replay
+    participant Judge as Triage + Verifier judges
+    participant Gate as Policy gate
+    participant Chain as DecisionProof
 
-    A->>Q: open the queue
-    Note over Q: max-heap over the normalised<br/>risk score; heapq.nlargest is O(n log k)
-    Q-->>A: incidents, highest risk first
-    A->>W: run the workflow on an incident
+    Analyst->>API: Run selected incident
+    API->>Context: Build evidence bundle and baseline prediction
+    Context->>Context: Union-Find correlation
+    Context->>Context: Hybrid retrieval and bounded graph traversal
+    Context-->>API: Grounded, label-free context
 
-    W->>G: correlate alerts
-    Note over G: Union-Find with path compression<br/>AND union by rank
-    G-->>W: N alerts collapse into M clusters
+    API->>SDK: Detection
+    SDK-->>API: Typed detection output
+    API->>SDK: Correlation
+    SDK-->>API: Typed correlation output
+    API->>SDK: Investigation
+    SDK-->>API: Typed investigation output
+    API->>Judge: Triage
+    Judge-->>API: Label, confidence, citations
+    API->>SDK: Remediation
+    SDK-->>API: Simulated action and rollback
+    API->>Judge: Independent verification
+    Judge-->>API: SEM-001..004 verdict
 
-    W->>R: find similar incidents
-    Note over R: BM25 + vectors fused by RRF (k=60),<br/>then a metadata re-rank. Labels never cross.
-    R-->>W: ranked precedents
-
-    W->>G: blast radius + attack chain
-    Note over G: depth-capped BFS that refuses to expand<br/>through hubs; Dijkstra on −log(confidence)
-    G-->>W: impacted entities, most probable chain
-
-    W->>W: Detection → Correlation → Investigation →<br/>Triage → Remediation → Verifier
-    Note over W: strict JSON contracts; a failure degrades<br/>to a marked fallback, never a silent one
-
-    W->>P: triage + recommendation + verdict
-    Note over P: dictionary lookups and thresholds.<br/>An agent cannot argue past it.
-    alt low risk, high confidence, verifier accepts
-        P-->>W: auto-approved
-    else anything else
-        P-->>A: human approval required
-        A->>C: approve (signature = msg.sender)
+    alt Schema or grounding failure
+        API->>SDK: One bounded retry
+        alt Retry still invalid or live unavailable
+            API->>API: Deterministic fallback and mark degraded stage
+        end
     end
 
-    W->>C: submitDecision(incidentId, evidenceHash, outputHash, label, risk)
-    Note over C: reverts unless the sender is a<br/>registered, active agent
-    C-->>A: transaction hash
-
-    A->>C: finalizeDecision
-    alt medium/high risk with no approval
-        C-->>A: revert ApprovalRequired
-    else approved or low risk
-        C-->>A: finalised
+    API->>Gate: Outputs, baseline, verifier, degraded stages
+    alt Safe low-risk outcome
+        Gate-->>API: Auto-approved
+    else Approval required
+        Gate-->>Analyst: Name the failed policy checks
+        Analyst->>API: Approve or reject with analyst identity
     end
+
+    API->>Chain: submitDecision(incidentId, evidenceHash, outputHash, label, risk)
+    alt Fingerprint already exists
+        Chain-->>API: Recover existing decision id
+    else New fingerprint
+        Chain-->>API: Transaction receipt and decision id
+    end
+
+    alt Low risk with no required approval
+        API->>Chain: finalizeDecision
+    else Human approval already exists or arrives later
+        API->>Chain: approveDecision
+        API->>Chain: finalizeDecision
+    else Medium or high risk without approval
+        Chain-->>API: ApprovalRequired, state remains proposed
+    end
+
+    Chain-->>API: Proposed, rejected, or finalized state
+    API-->>Analyst: Persist state for zero-RPC reload
 ```
 
-## 3. The tamper-detection moment
+Replay is the default demonstration mode. A validated cache hit makes no OpenAI request; a cache
+miss can run live only when explicitly configured. Every fallback is visible in `degraded_agents`
+and forces human review.
 
-Scene 5 of the demo. What makes it work is that verification *recomputes* the digests from stored
-data rather than reading back a saved hash column — an earlier version did the latter, and would
-have shown VALID after an edit.
+## 3. Tamper detection
+
+Verification recomputes both digests from the underlying evidence and agent-run rows. It never
+trusts a saved “valid” flag or merely reads back the hash stored beside the decision.
 
 ```mermaid
 flowchart LR
-    subgraph before["1 · anchored"]
-        o1["agent_runs.output_json"] -->|keccak256| h1["0x0ebe21e8…"]
-        h1 --> a1["anchored on Sepolia"]
-        a1 --> v1["VALID"]
+    subgraph anchored["1. Anchor the original decision"]
+        original["agent_runs.output_json"] -->|keccak256| originalHash["0x0ebe21e8..."]
+        originalHash --> sepolia["DecisionProof on Sepolia"]
+        sepolia --> valid["VALID"]
     end
 
-    subgraph attack["2 · insider edits the database"]
-        o2["UPDATE agent_runs<br/>SET output_json = …"]
-        note["the operator controls this table<br/>and nothing about the digest"]
-        o2 -.- note
+    subgraph edit["2. Insider edits SQLite"]
+        update["UPDATE agent_runs<br/>SET output_json = ..."]
+        boundary["The operator controls SQLite<br/>but not the anchored digest"]
+        update -.- boundary
     end
 
-    subgraph after["3 · recomputed"]
-        o3["agent_runs.output_json"] -->|keccak256| h3["0xe59d6005…"]
-        h3 --> cmp{"matches<br/>anchored?"}
-        a3["0x0ebe21e8… on chain<br/>unchanged"] --> cmp
-        cmp -->|no| v3["TAMPERED"]
+    subgraph verify["3. Recompute and compare"]
+        changed["changed output_json"] -->|keccak256| changedHash["0xe59d6005..."]
+        changedHash --> comparison{"Matches the<br/>anchored digest?"}
+        unchanged["0x0ebe21e8...<br/>unchanged on chain"] --> comparison
+        comparison -->|No| tampered["TAMPERED"]
+        comparison -->|Yes| stillValid["VALID"]
     end
 
-    before --> attack --> after
+    anchored --> edit --> verify
 
     classDef bad fill:#3a1a1a,stroke:#ff6b6b,color:#ffd7d7
     classDef good fill:#1a3a2a,stroke:#4ade80,color:#d7ffe7
-    class v3 bad
-    class v1 good
+    class tampered bad
+    class valid,stillValid good
 ```
 
-## 4. Two graphs, one traversal layer
+The demo round trip is therefore observable and reversible:
+`VALID → edit stored output → TAMPERED → restore original output → VALID`.
 
-GUIDE is tabular, so its entity graph has to be **constructed** (§8.4). WitFoo Precinct6 **ships**
-one. Both become the same `EntityGraph`, so the Day 4 traversal code runs on either without
-modification — which is the cross-domain portability claim, demonstrated rather than asserted.
+## 4. Two datasets, one traversal layer
 
-The difference that matters is where edge confidence comes from. On GUIDE it is hand-set and said
-to be hand-set; on WitFoo the dataset supplies it for 33.8% of edges.
+GUIDE is tabular, so AgentSphere constructs an entity graph. WitFoo Precinct6 ships a graph. Both
+are adapted to the same `EntityGraph` interface, allowing the capped BFS and confidence-weighted
+Dijkstra implementations to run unchanged.
 
 ```mermaid
 flowchart TB
-    subgraph guide["Microsoft GUIDE — tabular"]
-        g1[("591,340 evidence rows")] --> g2["construct co-occurrence edges<br/>within an alert"]
-        g2 --> g3["96,351 nodes / 26,194 edges"]
-        g4["confidence.py<br/>hand-set weights"]
+    subgraph guideGraph["Microsoft GUIDE — constructed graph"]
+        guideRows[("591,340 evidence rows")]
+        cooccurrence["Co-occurrence edges<br/>within correlated alerts"]
+        guideTotals["96,351 nodes<br/>26,194 edges"]
+        guideConfidence["confidence.py<br/>documented hand-set weights"]
+        guideRows --> cooccurrence --> guideTotals
     end
 
-    subgraph witfoo["WitFoo Precinct6 — ships a graph"]
-        w1[("634,190 labelled edges")] --> w2["map node types onto the<br/>canonical entity vocabulary"]
-        w2 --> w3["35,133 nodes declared<br/>16,586 on activity edges"]
-        w4["WitFooConfidence<br/>label_confidence + suspicion_score"]
+    subgraph witfooGraph["WitFoo Precinct6 — shipped graph"]
+        witfooEdges[("634,190 labelled edges")]
+        canonicalTypes["Map source node types to<br/>the canonical entity vocabulary"]
+        witfooTotals["35,133 declared nodes<br/>16,586 on activity edges"]
+        witfooConfidence["Dataset confidence<br/>label confidence + suspicion score"]
+        witfooEdges --> canonicalTypes --> witfooTotals
     end
 
-    shared["app/graph/traverse.py<br/>depth-capped BFS · Dijkstra on −log(confidence) · DFS lineage<br/><b>unchanged for both</b>"]
+    traversal["Shared traversal layer<br/>depth-capped BFS<br/>Dijkstra on -log(confidence)<br/>DFS lineage"]
+    outputs["Blast radius<br/>most probable path<br/>lineage report"]
 
-    g3 --> shared
-    w3 --> shared
-    g4 -.->|"confidence_fn"| shared
-    w4 -.->|"confidence_fn"| shared
+    guideTotals --> traversal
+    witfooTotals --> traversal
+    guideConfidence -.->|confidence function| traversal
+    witfooConfidence -.->|confidence function| traversal
+    traversal --> outputs
 
-    shared --> out["blast radius · most probable attack chain"]
-
-    classDef ships fill:#1a2a32,stroke:#4ad0ff,color:#e6edf3
-    class w1,w3,w4 ships
+    classDef shipped fill:#1a2a32,stroke:#4ad0ff,color:#e6edf3
+    class witfooEdges,witfooTotals,witfooConfidence shipped
 ```
 
-WitFoo's node total needs its parts shown, or 16,586 looks like data was dropped:
+WitFoo’s node total needs its parts shown, or 16,586 looks like data was dropped:
 
-| | Count |
-|---|---|
+| Node population | Count |
+|---|---:|
 | Declared by the dataset | 35,133 |
 | On activity edges — the traversal graph | 16,586 |
 | Only on `INCIDENT_LINK` edges — incident membership, no observed activity | 16,503 |
 | On no edge at all | 2,044 |
 
-`INCIDENT_LINK` edges are excluded from traversal on purpose: they join an incident record to its
-entities, so walking one would let a path hop between unrelated hosts through the incident node
-and report that as an attack chain.
+`INCIDENT_LINK` edges are excluded from traversal intentionally. Traversing them would allow a path
+to jump between otherwise unrelated entities through a shared incident record and misreport that
+administrative membership as an attack path.
 
-## 5. What is deliberately not on chain
+## 5. Proof lifecycle and idempotent recovery
+
+```mermaid
+stateDiagram-v2
+    [*] --> Proposed: submitDecision
+    Proposed --> Finalized: low-risk finalizeDecision
+    Proposed --> Approved: approveDecision(true)
+    Proposed --> Rejected: approveDecision(false)
+    Approved --> Finalized: finalizeDecision
+    Rejected --> Rejected: finalization blocked
+
+    note right of Proposed
+        Medium and high risk remain here
+        until a human approval is recorded.
+    end note
+
+    note left of Finalized
+        A repeated fingerprint recovers the
+        existing decision id instead of sending
+        a reverting duplicate transaction.
+    end note
+```
+
+Approval and anchoring may happen in either order. The API reconciles an approval recorded before
+anchoring, persists the witnessed contract state, and keeps normal Proof-page reloads network-free.
+The explicit **Confirm against the contract** action performs the live read and preserves that
+response instead of overwriting it with the local-only view.
+
+## 6. What is deliberately not on chain
 
 | Stays in SQLite | Goes on chain |
 |---|---|
 | Raw evidence rows and entity values | `keccak256` digest of the evidence bundle |
-| Agent prompts and full outputs | `keccak256` digest of the assembled outputs |
-| Analyst comments | `keccak256` of the comment |
-| Incident summaries, rationales | incident id, label, risk level |
-| — | agent address, approver address, timestamps |
+| Agent prompts and full structured outputs | `keccak256` digest of the assembled outputs |
+| Analyst comment text | `keccak256` digest of the comment |
+| Incident summaries and rationales | Incident id, label, and risk level |
+| Retrieval results and graph context | Agent address, approver address, and timestamps |
 
-Enforced by what `DecisionProof` accepts: there is no function on that contract that could store
-an evidence row even if a caller wanted to.
+This boundary is enforced by the `DecisionProof` ABI: the contract has no function capable of
+accepting a raw evidence row, prompt, rationale, or analyst comment.
