@@ -52,7 +52,13 @@ export function Home({
                 the one place on the app where gold is legible enough to lead with. */}
             <p className="mono text-code uppercase tracking-[0.14em] text-brand">AgentSphere SecureOps</p>
             {/* The hero animation. Lazy and explicitly sized: at 495kB it must never touch first
-                paint, and the fixed box means loading it late shifts nothing on the page. */}
+                paint, and the fixed box means loading it late shifts nothing on the page.
+
+                It plays once and holds its final frame. That is a property of the file, not of
+                this markup: `public/brand/hero.gif` has had its 19-byte Netscape Application
+                Extension stripped, and a GIF without that block does not loop. HTML gives no way
+                to stop a looping GIF, so re-exporting this asset from any ordinary tool will
+                silently restore the loop — strip the block again if that happens. */}
             <img
               src="/brand/hero.gif"
               alt=""

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiMock = vi.hoisted(() => ({
@@ -86,18 +86,48 @@ describe("provenance lab", () => {
   const mount = () =>
     render(<Provenance summary={{ available: true }} onBack={vi.fn()} backLabel="Back" />);
 
-  it("explains the attack path at a glance", async () => {
+  it("shows the attack path as a path, with the confidence on each link", async () => {
     mount();
     expect(await screen.findByText("Most probable attack path")).toBeInTheDocument();
-    expect(screen.getByText("Confidence per hop")).toBeInTheDocument();
-    // Invariant 7 stated where the chart is, not in a distant doc.
+    expect(screen.getByText("The path itself")).toBeInTheDocument();
+
+    // The nodes, in order, rather than a bar chart of the numbers between them. Scoped, because
+    // the node-link diagram further down the page names the same entities.
+    const chain = within(screen.getByRole("list", { name: "Attack path, in order" }));
+    expect(chain.getByText("alice")).toBeInTheDocument();
+    expect(chain.getByText("laptop")).toBeInTheDocument();
+    expect(chain.getByText("10.0.0.4")).toBeInTheDocument();
+    expect(chain.getByText("0.900")).toBeInTheDocument();
+    expect(chain.getByText("0.300")).toBeInTheDocument();
+
+    // Invariant 7 stated where the path is, not in a distant doc.
     expect(screen.getByText(/−log\(confidence\)/)).toBeInTheDocument();
+  });
+
+  it("says so when every link carries the identical confidence", async () => {
+    // The shape of the real corpus: across 25 sampled incidents the spread between the highest
+    // and lowest edge confidence was 0.000 every time, which is why a per-hop bar chart could
+    // only ever draw identical rectangles.
+    apiMock.witfooGraph.mockResolvedValue({
+      ...graph,
+      attack_path: { ...graph.attack_path, edge_confidences: [0.987, 0.987] },
+    });
+    mount();
+    expect(
+      await screen.findByText(/Every link on this path carries the same confidence/),
+    ).toBeInTheDocument();
+    const chain = within(screen.getByRole("list", { name: "Attack path, in order" }));
+    expect(chain.getAllByText("0.987")).toHaveLength(2);
   });
 
   it("shows blast radius and the hub cap", async () => {
     mount();
     expect(await screen.findByText("Blast radius")).toBeInTheDocument();
     expect(screen.getByText("Reachable entities by type")).toBeInTheDocument();
+    // Rows, not a one-bar bar chart: 19 of 25 sampled incidents reach exactly one entity type.
+    const reach = within(screen.getByRole("list", { name: "Reachable entities by type" }));
+    expect(reach.getByText("account")).toBeInTheDocument();
+    expect(reach.getByText("device")).toBeInTheDocument();
     expect(screen.getByText(/never expands through a hub/)).toBeInTheDocument();
   });
 
@@ -125,13 +155,29 @@ describe("provenance lab", () => {
     // 1681754887 seconds -> 2023-04-17. A millisecond reading would render 1970.
     expect(screen.getByText(/2023-04-17/)).toBeInTheDocument();
   });
-  it("separates measured confidence from the fallback prior", async () => {
+  it("separates measured confidence from the fallback prior", () => {
     mount();
-    // Two edges, one scored — the strip must say so rather than leaving the reader to infer it
-    // from stroke width, which encodes both identically.
-    expect(await screen.findByText("Where these confidences come from")).toBeInTheDocument();
-    expect(screen.getByText(/1 of 2 scored/)).toBeInTheDocument();
-    expect(screen.getByText(/looks exactly as confident as a measured one/)).toBeInTheDocument();
+    // Two edges, one scored. The strip reports the proportion and the spread rather than a
+    // histogram: on the real corpus every incident carries a single confidence value across all
+    // its edges, so buckets could only ever draw one bar and four empty tracks.
+    return screen.findByText("Where these confidences come from").then(() => {
+      expect(screen.getByText(/1 of 2 dataset-scored/)).toBeInTheDocument();
+      expect(screen.getByText("Distinct values")).toBeInTheDocument();
+      expect(screen.getByText("Range")).toBeInTheDocument();
+      expect(screen.getByText("0.300 – 0.900")).toBeInTheDocument();
+    });
+  });
+
+  it("names the single value when an incident's edges all share one confidence", async () => {
+    apiMock.witfooGraph.mockResolvedValue({
+      ...graph,
+      edges: graph.edges.map((edge) => ({ ...edge, confidence: 0.99, scored: true })),
+    });
+    mount();
+    expect(await screen.findByText("The value")).toBeInTheDocument();
+    expect(screen.getByText("0.990")).toBeInTheDocument();
+    expect(screen.getByText(/never one edge from another within it/)).toBeInTheDocument();
+    expect(screen.getByText("none used")).toBeInTheDocument();
   });
 
   it("compares the GUIDE graph only when an incident was carried in", async () => {
