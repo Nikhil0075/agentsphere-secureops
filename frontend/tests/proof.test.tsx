@@ -56,6 +56,7 @@ const proof = {
   // Deliberately not a sepolia.etherscan.io URL: the page must use what the API returned rather
   // than rebuilding it from a hardcoded host.
   explorer_url: "https://explorer.example/tx/0xfeedfacecafe",
+  explorer_base: "https://explorer.example",
   valid: null,
   chain_available: false,
   chain_checked: false,
@@ -118,6 +119,40 @@ describe("proof screen", () => {
     const link = await screen.findByRole("link", { name: /0xfeedfacecafe/ });
     expect(link).toHaveAttribute("href", proof.explorer_url);
     expect(link.getAttribute("href")).not.toContain("sepolia.etherscan.io");
+  });
+
+  it("links the contracts and the signer, not only the transaction", async () => {
+    render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
+    await screen.findByText("On the explorer");
+    // Built from the explorer origin the API served for the chain id it actually used.
+    const contract = screen.getByRole("link", { name: proof.contract_address });
+    expect(contract).toHaveAttribute(
+      "href",
+      `${proof.explorer_base}/address/${proof.contract_address}`,
+    );
+    expect(screen.getByRole("link", { name: proof.registry_address })).toBeInTheDocument();
+    expect(screen.getByText("holds decision #7")).toBeInTheDocument();
+  });
+
+  it("still links the anchored record when the anchor was resolved by fingerprint", async () => {
+    // The duplicate-protected path: anchored, verifiable, and no transaction of ours to show.
+    // The links block used to render nothing at all here, which reads as "nothing is on chain".
+    apiMock.proof.mockResolvedValue({ ...proof, tx_hash: "", explorer_url: "", block_number: null, gas_used: null });
+    render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
+    await screen.findByText("On the explorer");
+
+    expect(screen.getByText(/already on chain, so no new transaction was sent/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: proof.contract_address })).toBeInTheDocument();
+    // And the missing block/gas are named rather than left as bare dashes.
+    expect(screen.getAllByText("no transaction").length).toBeGreaterThan(0);
+  });
+
+  it("offers nothing to click before an anchor has been attempted", async () => {
+    apiMock.proof.mockResolvedValue({ ...proof, anchored: false, tx_hash: "", attempts: [] });
+    render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
+    await screen.findByText("On the explorer");
+    expect(screen.getByText(/Anchor proof on chain/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: proof.contract_address })).not.toBeInTheDocument();
   });
 
   it("shows block and gas, which were previously never populated", async () => {

@@ -360,10 +360,17 @@ export function AnchorJourney({
     {
       key: "block",
       short: "Block",
+      // "not in a block" reads as a failure on the recovery path, where the truth is that the
+      // block belongs to whoever anchored the fingerprint first. Same wording as On chain.
       status: proof?.block_number
         ? `block ${proof.block_number.toLocaleString()}`
-        : "not in a block",
-      title: "Included in a Sepolia block",
+        : proof?.anchored
+          ? "no transaction of ours"
+          : "not in a block",
+      title:
+        proof?.anchored && !proof?.block_number
+          ? "Already on chain, so nothing was re-submitted"
+          : "Included in a Sepolia block",
       tone: (proof?.block_number ? "done" : "pending") as Tone,
       source: "app/blockchain/client.py · receipt.blockNumber, receipt.gasUsed",
       body: (

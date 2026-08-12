@@ -341,6 +341,10 @@ class ProofInfo(BaseModel):
     onchain_decision_id: int | None = None
     onchain_state: str = ""
     explorer_url: str = ""
+    #: Explorer origin for this chain id, e.g. "https://sepolia.etherscan.io". Served so the UI can
+    #: link a contract or an address without hardcoding a host -- a link to the wrong network's
+    #: explorer is worse than no link, and the chain id is only known here.
+    explorer_base: str = ""
     valid: bool | None = None
     chain_available: bool = False
     #: False when this response was assembled without touching an RPC. The Proof screen shows it

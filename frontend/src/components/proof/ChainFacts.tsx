@@ -2,11 +2,11 @@ import type { IntegrityInfo, ProofInfo } from "../../lib/api";
 import { Button, Card, Hash, Note, Stat } from "../primitives";
 
 /**
- * The concrete chain facts: network, block, gas, contract addresses, transaction.
+ * The concrete chain facts: network, decision id, block, gas, contract addresses, state.
  *
- * The explorer link uses `proof.explorer_url` from the API. It used to be built in the page from a
- * hardcoded Sepolia host, which silently produced a wrong link on any other network — the URL is
- * derived server-side from the chain id that was actually used.
+ * Facts only. Every outbound link now lives in `ExplorerLinks` beneath the digests, so the
+ * transaction is not offered twice on one screen and the "go and verify this" affordance is in one
+ * place rather than tucked into the corner of a stat panel.
  */
 export function ChainFacts({
   proof,
@@ -48,6 +48,13 @@ export function ChainFacts({
   const failed = attempted && !proof?.anchored;
   const outOfGas = /insufficient funds/i.test(proof?.reason ?? "");
 
+  // Anchored, but by fingerprint against a proof that was already on chain -- so there is no
+  // transaction of ours, and therefore no block and no gas. A bare em-dash there reads as "we do
+  // not know", when the truth is "there is nothing of ours to know". Say which.
+  const recovered = Boolean(proof?.anchored) && !proof?.tx_hash;
+  const noTx = recovered ? "no transaction" : "—";
+  const recoveredHint = recovered ? "resolved by fingerprint" : undefined;
+
   return (
     <Card
       title="On chain"
@@ -81,8 +88,16 @@ export function ChainFacts({
       <div className="grid grid-cols-2 gap-2">
         <Stat label="Network" value={proof?.network || "—"} hint={proof?.chain_id ? `chainId ${proof.chain_id}` : undefined} />
         <Stat label="Decision" value={proof?.onchain_decision_id ? `#${proof.onchain_decision_id}` : "—"} />
-        <Stat label="Block" value={proof?.block_number ? proof.block_number.toLocaleString() : "—"} />
-        <Stat label="Gas used" value={proof?.gas_used ? proof.gas_used.toLocaleString() : "—"} />
+        <Stat
+          label="Block"
+          value={proof?.block_number ? proof.block_number.toLocaleString() : noTx}
+          hint={proof?.block_number ? undefined : recoveredHint}
+        />
+        <Stat
+          label="Gas used"
+          value={proof?.gas_used ? proof.gas_used.toLocaleString() : noTx}
+          hint={proof?.gas_used ? undefined : recoveredHint}
+        />
         <Stat
           label="Contract says"
           value={contractSays}
@@ -105,25 +120,6 @@ export function ChainFacts({
         <Row label="AgentRegistry" value={proof?.registry_address} />
         <Row label="Submitted by" value={proof?.agent_address} />
       </dl>
-
-      {proof?.tx_hash && (
-        <div className="mt-3">
-          <div className="text-2xs uppercase tracking-wider text-faint">Transaction</div>
-          {proof.explorer_url ? (
-            <a
-              href={proof.explorer_url}
-              target="_blank"
-              rel="noreferrer"
-              className="mono break-all text-xs text-primary hover:underline"
-            >
-              {proof.tx_hash}
-            </a>
-          ) : (
-            // No explorer is known for this chain id. A wrong link is worse than none.
-            <span className="mono break-all text-xs text-muted">{proof.tx_hash}</span>
-          )}
-        </div>
-      )}
 
       <div className="mt-4 border-t border-line pt-3">
         <Button disabled={confirming} onClick={onConfirm}>

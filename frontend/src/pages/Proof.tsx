@@ -13,6 +13,7 @@ import {
 import { AgentRegistryPanel } from "../components/proof/AgentRegistryPanel";
 import { AnchorJourney } from "../components/proof/AnchorJourney";
 import { ChainFacts } from "../components/proof/ChainFacts";
+import { ExplorerLinks } from "../components/proof/ExplorerLinks";
 import { OnChainVsOffChain } from "../components/proof/OnChainVsOffChain";
 import { TamperDiff, type TamperChange } from "../components/proof/TamperDiff";
 import { ThreeControls } from "../components/proof/ThreeControls";
@@ -177,6 +178,7 @@ export function Proof({
       <AnchorJourney proof={proof} integrity={integrity} />
 
       <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+        <div className="min-w-0 space-y-4">
         <Card
           className="min-w-0"
           title="keccak256 over canonical JSON"
@@ -245,6 +247,11 @@ export function Proof({
             <span className="mono"> agent_runs.output_json</span> and nothing else.
           </p>
         </Card>
+
+        {/* Directly under the digests, because "go and check it yourself" is the natural next
+            question once someone has seen the two hashes agree. */}
+        <ExplorerLinks proof={proof} />
+        </div>
 
         <div className="min-w-0">
           <ChainFacts

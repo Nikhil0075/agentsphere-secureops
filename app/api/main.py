@@ -838,6 +838,7 @@ def _proof_info(
         onchain_decision_id=onchain_id,
         onchain_state=onchain_state,
         explorer_url=f"{base}/tx/{tx_hash}" if base and tx_hash else "",
+        explorer_base=base or "",
         valid=info.get("valid"),
         chain_available=bool(info.get("chain_available")),
         chain_checked=client is not None,

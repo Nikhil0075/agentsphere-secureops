@@ -320,6 +320,8 @@ export interface ProofInfo {
   onchain_decision_id: number | null;
   onchain_state: string;
   explorer_url: string;
+  /** Explorer origin for this chain, so links are never built from a hardcoded host. */
+  explorer_base: string;
   valid: boolean | null;
   chain_available: boolean;
   /** False when the response was assembled without an RPC — "we did not ask", not "it said no". */
