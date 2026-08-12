@@ -43,12 +43,11 @@ export function ExplorerLinks({ proof }: { proof: ProofInfo | null }) {
       label: "Transaction",
       value: proof.tx_hash,
       href: proof.explorer_url || (base ? `${base}/tx/${proof.tx_hash}` : ""),
-      // On a re-anchor the contract refuses to write the same digests twice, so this is the
-      // transaction that put them there originally. Same 32 bytes, same block -- worth linking,
-      // and worth attributing rather than implying this attempt sent it.
-      note: proof.recovered
-        ? "the submission that first anchored these digests"
-        : "the submission this application sent",
+      // Deliberately makes no claim about *who* sent it. On a re-anchor the contract refuses to
+      // write the same digests twice, so this may be an earlier submission -- and once that
+      // transaction has been backfilled onto this row, nothing local distinguishes the two. What
+      // is true in every case is what the transaction did, so that is what the label says.
+      note: "the transaction that anchored these digests",
     });
   }
   if (proof?.contract_address) {

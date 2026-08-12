@@ -29,6 +29,11 @@ STATE_NAMES = {0: "proposed", 1: "approved", 2: "rejected", 3: "finalized"}
 
 EXPLORERS = {11155111: "https://sepolia.etherscan.io"}
 
+#: Public RPCs cap ``eth_getLogs``; ours rejects anything wider than 50,000 blocks.
+LOG_SEARCH_SPAN = 49_000
+#: How many windows to walk back before giving up -- roughly a month of Sepolia blocks.
+LOG_SEARCH_WINDOWS = 4
+
 
 class ChainUnavailable(RuntimeError):
     """Raised only by callers that explicitly demand a chain; the client itself degrades."""
@@ -424,6 +429,51 @@ class ChainClient:
             return int(found) or None
         except Exception:  # noqa: BLE001 - reads degrade just like every other client operation
             return None
+
+    def submission_of(self, decision_id: int) -> dict | None:
+        """Find the transaction that submitted an existing on-chain decision.
+
+        A decision recovered by fingerprint has no transaction of its own, and the local row that
+        recorded the original one may be long gone -- a demo reset clears it, and a fresh checkout
+        never had it. The chain still knows: ``DecisionSubmitted`` indexes ``decisionId``, so the
+        log carries the transaction hash and block, and the receipt carries the gas.
+
+        Searched backwards in bounded windows because public RPCs cap ``eth_getLogs`` -- ours at
+        50,000 blocks -- and an unbounded query is simply rejected. Anchors are recent by nature, so
+        the first window usually hits; the cap on windows stops a missing decision from walking the
+        whole chain.
+        """
+        if not self.available or not decision_id:
+            return None
+        try:
+            latest = self._w3.eth.block_number
+            end = latest
+            for _ in range(LOG_SEARCH_WINDOWS):
+                start = max(0, end - LOG_SEARCH_SPAN)
+                logs = self._proof.events.DecisionSubmitted().get_logs(
+                    argument_filters={"decisionId": int(decision_id)},
+                    from_block=start,
+                    to_block=end,
+                )
+                if logs:
+                    entry = logs[0]
+                    tx_hash = entry["transactionHash"].hex()
+                    gas = None
+                    try:
+                        gas = int(self._w3.eth.get_transaction_receipt(entry["transactionHash"])["gasUsed"])
+                    except Exception:  # noqa: BLE001 - the block alone is still worth reporting
+                        pass
+                    return {
+                        "tx_hash": tx_hash if tx_hash.startswith("0x") else f"0x{tx_hash}",
+                        "block_number": int(entry["blockNumber"]),
+                        "gas_used": gas,
+                    }
+                if start == 0:
+                    break
+                end = start - 1
+        except Exception:  # noqa: BLE001 - reads degrade like every other client operation
+            return None
+        return None
 
     def verify(self, decision_id: int, evidence_hash: str, output_hash: str) -> bool | None:
         """On-chain recompute-and-compare. ``None`` means the chain could not answer."""

@@ -97,7 +97,8 @@ def main() -> int:
 
     print("local record")
     for table in DEMO_TABLES:
-        print(f"  {table:20s} {counts[table]:>8,}  -> cleared")
+        note = "cleared, keeping landed transactions" if table == "blockchain_proofs" else "cleared"
+        print(f"  {table:20s} {counts[table]:>8,}  -> {note}")
     for table in KEPT_TABLES:
         print(f"  {table:20s} {counts[table]:>8,}  -> kept")
 
@@ -155,7 +156,16 @@ def main() -> int:
     with db.session() as conn:
         for table in DEMO_TABLES:
             try:
-                conn.execute(f"DELETE FROM {table}")
+                if table == "blockchain_proofs":
+                    # Keep the rows that landed a transaction. They are the only local record of
+                    # which block and how much gas anchored a given pair of digests, and the Proof
+                    # screen reads them to report an already-anchored decision instead of a column
+                    # of dashes. Deleting them made a re-anchored decision look like it had never
+                    # been on chain -- which is exactly the case this reset exists to demo around.
+                    # They are invisible in the UI: it only ever queries by the current decision id.
+                    conn.execute("DELETE FROM blockchain_proofs WHERE COALESCE(tx_hash, '') = ''")
+                else:
+                    conn.execute(f"DELETE FROM {table}")
             except Exception as exc:  # noqa: BLE001
                 print(f"  {table}: {type(exc).__name__}: {exc}", file=sys.stderr)
         conn.commit()

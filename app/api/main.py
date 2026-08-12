@@ -658,6 +658,11 @@ def anchor(decision_id: str) -> models.ProofInfo:
         attempts = _anchor_attempts(conn, decision_id)
         approval = _local_approval(conn, decision_id)
         origin = _original_submission(conn, row[3], row[4])
+        if origin is None and not outcome.tx_hash:
+            origin = _backfill_submission(
+                conn, decision_id, attempts[-1].proof_id if attempts else "", client,
+                outcome.decision_id,
+            )
 
     return _proof_info(
         decision_id, info, st, attempts=attempts, approval=approval,
@@ -783,6 +788,40 @@ def _original_submission(conn, evidence_hash: str, output_hash: str):
     return models.AnchorAttempt(**{key: row[key] for key in row.keys()})
 
 
+def _backfill_submission(conn, decision_id: str, proof_id: str, client, onchain_id: int | None):
+    """Ask the chain for the original transaction and keep the answer.
+
+    Only reached when the local history has no landed transaction for these digests -- a reset
+    cleared it, or this machine never had it. The lookup costs one bounded log query, so it runs
+    only on paths that are already talking to the chain, and the result is written back so every
+    later load stays zero-RPC.
+    """
+    if client is None or not onchain_id or not proof_id:
+        return None
+    # Every other chain read on this screen degrades rather than raising, and so must this one: a
+    # stubbed or older client that cannot answer must not take the anchor route down with it.
+    lookup = getattr(client, "submission_of", None)
+    if not callable(lookup):
+        return None
+    try:
+        found = lookup(onchain_id)
+    except Exception:  # noqa: BLE001 - a recovered block number is a nicety, never a requirement
+        return None
+    if not found:
+        return None
+    conn.execute(
+        """UPDATE blockchain_proofs SET tx_hash = ?, block_number = ?, gas_used = ?
+           WHERE proof_id = ? AND COALESCE(tx_hash, '') = ''""",
+        (found["tx_hash"], found["block_number"], found["gas_used"], proof_id),
+    )
+    conn.commit()
+    return models.AnchorAttempt(
+        tx_hash=found["tx_hash"],
+        block_number=found["block_number"],
+        gas_used=found["gas_used"],
+    )
+
+
 def _local_approval(conn, decision_id: str) -> models.LocalApproval | None:
     """The most recent human decision recorded for this decision, chain or no chain.
 
@@ -832,15 +871,19 @@ def _proof_info(
 
     chain_id = info.get("chain_id") or deployment.get("chainId")
     tx_hash = info.get("tx_hash") or ""
-    # Fall back to the transaction that first anchored these digests. `recovered` records that the
-    # figures below describe an earlier submission, so the UI can attribute them rather than imply
-    # this attempt sent them.
+    onchain_id = info.get("onchain_decision_id")
+    # Fall back to the transaction that first anchored these digests -- but only when the decision
+    # is known to exist on chain. A submission that outright failed has no on-chain id, and
+    # surfacing a transaction found by digest alone would dress that failure up as a success: a
+    # block and a link for an anchor that never happened. `recovered` then records that the figures
+    # describe an earlier submission, so the UI attributes them rather than claiming them.
+    if not onchain_id:
+        origin = None
     recovered = bool(origin) and not tx_hash
     if recovered and origin is not None:
         tx_hash = origin.tx_hash
     base = EXPLORERS.get(chain_id or 0)
 
-    onchain_id = info.get("onchain_decision_id")
     onchain: models.OnchainDecision | None = None
     onchain_state = ""
     if client is not None and onchain_id:
@@ -919,6 +962,13 @@ def proof(decision_id: str, check_chain: bool = Query(False)) -> models.ProofInf
         origin = _original_submission(conn, row[0], row[1])
         client = get_state().chain() if check_chain else None
         info = decisions_service.verify_decision(conn, decision_id, client)
+        # "Confirm against the contract" is the one control that may open a connection, so it is
+        # also the right moment to recover a transaction the local record has lost.
+        if origin is None and client is not None and not info.get("tx_hash"):
+            origin = _backfill_submission(
+                conn, decision_id, attempts[-1].proof_id if attempts else "", client,
+                info.get("onchain_decision_id"),
+            )
 
     return _proof_info(
         decision_id, info, get_state(), attempts=attempts, approval=approval, client=client,

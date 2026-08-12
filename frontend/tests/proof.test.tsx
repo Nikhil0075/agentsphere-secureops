@@ -148,7 +148,7 @@ describe("proof screen", () => {
       "href",
       proof.explorer_url,
     );
-    expect(screen.getByText("the submission that first anchored these digests")).toBeInTheDocument();
+    expect(screen.getByText("the transaction that anchored these digests")).toBeInTheDocument();
     // Block and gas come from that submission and are reported, not dashed out.
     expect(screen.getByText("6,543,210")).toBeInTheDocument();
     expect(screen.getByText("218,455")).toBeInTheDocument();

@@ -763,3 +763,81 @@ def test_a_reason_is_never_shown_beside_a_landed_transaction(client, successful_
     """
     proof = client.get(f"/api/decisions/{successful_proof}/proof").json()
     assert proof["reason"] == ""
+
+
+def test_a_lost_transaction_is_recovered_from_the_chain_and_kept(client, workflow, monkeypatch):
+    """The local record can lose the only copy of a landed transaction.
+
+    `scripts/reset_demo.py` clears the decision tables and a fresh checkout never had them, so a
+    decision that resolves by fingerprint arrives with an on-chain id and nothing else: the Proof
+    screen showed a dash for block and gas and offered no link. The chain still knows --
+    `DecisionSubmitted` indexes the decision id -- and "Confirm against the contract" is the one
+    control allowed to ask. The answer is written back so the next load needs no RPC.
+
+    Restores the row it borrows: `workflow` is module-scoped, so leaving a transaction behind
+    would silently rewrite the premise of every later test in this file.
+    """
+    from app.api.state import AppState
+    from app.db import session as db
+
+    decision_id = workflow["decision_id"]
+    client.post(f"/api/decisions/{decision_id}/anchor")
+    with db.session() as conn:
+        before = conn.execute(
+            """SELECT proof_id, tx_hash, block_number, gas_used, onchain_decision_id
+               FROM blockchain_proofs WHERE decision_id = ?
+               ORDER BY created_at DESC, rowid DESC LIMIT 1""",
+            (decision_id,),
+        ).fetchone()
+        proof_id = before["proof_id"]
+        conn.execute(
+            """UPDATE blockchain_proofs SET tx_hash = '', block_number = NULL, gas_used = NULL,
+                      onchain_decision_id = 21 WHERE proof_id = ?""",
+            (proof_id,),
+        )
+        conn.commit()
+
+    class Recovering:
+        available = True
+
+        def submission_of(self, onchain_id):
+            assert onchain_id == 21
+            return {"tx_hash": "0x" + "cd" * 32, "block_number": 11452312, "gas_used": 201393}
+
+        def get_decision(self, _):
+            return {}
+
+        def verify(self, *_a, **_k):
+            return None
+
+        def find_by_fingerprint(self, *_a, **_k):
+            return 21
+
+    try:
+        monkeypatch.setattr(AppState, "chain", lambda self: Recovering())
+        asked = client.get(f"/api/decisions/{decision_id}/proof?check_chain=true").json()
+        assert asked["block_number"] == 11452312
+        assert asked["gas_used"] == 201393
+        assert asked["tx_hash"] == "0x" + "cd" * 32
+        assert asked["recovered"] is True
+
+        # Written back: the next read is zero-RPC and still carries the figures.
+        monkeypatch.setattr(
+            AppState,
+            "chain",
+            lambda self: (_ for _ in ()).throw(AssertionError("proof route opened a connection")),
+        )
+        again = client.get(f"/api/decisions/{decision_id}/proof").json()
+        assert again["block_number"] == 11452312
+        assert again["tx_hash"] == "0x" + "cd" * 32
+    finally:
+        with db.session() as conn:
+            conn.execute(
+                """UPDATE blockchain_proofs SET tx_hash = ?, block_number = ?, gas_used = ?,
+                          onchain_decision_id = ? WHERE proof_id = ?""",
+                (
+                    before["tx_hash"], before["block_number"], before["gas_used"],
+                    before["onchain_decision_id"], proof_id,
+                ),
+            )
+            conn.commit()
