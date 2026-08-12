@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.agents.llm import normalize_mode
 
@@ -306,6 +306,20 @@ class AnchorAttempt(BaseModel):
     agent_address: str = ""
     onchain_state: str = ""
     anchored_at: str = ""
+
+    @field_validator("proof_id", "tx_hash", "failure_reason", "agent_address", "onchain_state",
+                     "anchored_at", mode="before")
+    @classmethod
+    def _null_is_empty(cls, value):
+        """SQLite NULL means "not recorded", which for these columns is the empty string.
+
+        Two write paths reach `blockchain_proofs`: the API route, which always supplies every
+        column, and `services/decisions.py`, which the CLI and the idempotent-recovery path use and
+        which leaves newer columns at their NULL default. A row from the second path made the whole
+        Proof endpoint fail validation with a 500 — so anchoring from `run_demo.py --anchor`, the
+        exact path a rehearsal uses, broke the screen it was rehearsing.
+        """
+        return "" if value is None else value
 
 
 class LocalApproval(BaseModel):

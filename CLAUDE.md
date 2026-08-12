@@ -217,6 +217,16 @@ changing the behaviour.
   gaps that remain are: nothing to pivot on, a single uncorroborated entity type, no chronology,
   and no shared entity linking the alerts. Mean is now 0.53.
   `test_absent_entity_types_are_not_reported_as_gaps` guards it.
+- **An anchored incident can never produce a second transaction.** `submitDecision` stores
+  `keccak256(incidentId, evidenceHash, outputHash)` in a permanent mapping, so re-anchoring the
+  same incident resolves to the existing decision by fingerprint — correct duplicate protection,
+  but it means the Proof screen will never again show a block, gas figure or transaction link for
+  that incident. Demoing a *live* anchor requires an incident the contract has not seen.
+  `scripts/reset_demo.py` clears the local tables and names fresh candidates, keeping a ledger
+  under the git-ignored `artifacts/chain/` because the reset destroys the only local record of
+  what was anchored. The replay cache is warmed **per incident** and only for the six arc cases, so
+  a fresh incident under `replay` misses every stage and degrades — run it `deterministic`, or warm
+  it first. Nothing can clear the chain.
 - **`integrity.onchain_valid` is not a contract verdict.** It is computed by comparing against the
   *locally recorded* proof row, and it reads `true` on a decision whose on-chain state is still
   `unanchored` — nothing was ever asked. `ProofInfo.chain_checked` is the flag that says whether an

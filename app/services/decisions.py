@@ -232,9 +232,9 @@ def anchor_decision(
         """
         INSERT INTO blockchain_proofs (
             proof_id, decision_id, chain_id, contract_address, tx_hash, block_number,
-            agent_address, evidence_hash, output_hash, onchain_decision_id, onchain_state,
-            anchored_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?, datetime('now'))
+            gas_used, agent_address, evidence_hash, output_hash, onchain_decision_id,
+            onchain_state, failure_reason, anchored_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now'))
         """,
         (
             _new_id("PRF"),
@@ -243,11 +243,16 @@ def anchor_decision(
             anchor.contract_address,
             anchor.tx_hash,
             anchor.block_number,
+            # Both write paths must record the same facts. This one predates `gas_used` and
+            # `failure_reason`, so a CLI anchor -- which is what a rehearsal uses -- produced a row
+            # the Proof screen then rendered with an empty gas figure and no reason for a failure.
+            anchor.gas_used,
             anchor.agent_address,
             state.evidence_hash,
             state.output_hash,
             anchor.decision_id,
             (anchor.onchain_state or "proposed") if anchor.anchored else "unanchored",
+            "" if anchor.anchored else (anchor.reason or ""),
         ),
     )
     conn.commit()
