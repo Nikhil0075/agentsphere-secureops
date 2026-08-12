@@ -48,12 +48,11 @@ export function ChainFacts({
   const failed = attempted && !proof?.anchored;
   const outOfGas = /insufficient funds/i.test(proof?.reason ?? "");
 
-  // Anchored, but by fingerprint against a proof that was already on chain -- so there is no
-  // transaction of ours, and therefore no block and no gas. A bare em-dash there reads as "we do
-  // not know", when the truth is "there is nothing of ours to know". Say which.
-  const recovered = Boolean(proof?.anchored) && !proof?.tx_hash;
-  const noTx = recovered ? "no transaction" : "—";
-  const recoveredHint = recovered ? "resolved by fingerprint" : undefined;
+  // Anchored by fingerprint against digests already on chain. The block and gas below are the
+  // original submission's -- real, public, and describing the identical 32 bytes -- so they are
+  // reported rather than dashed out, with the attribution said plainly.
+  const recovered = Boolean(proof?.recovered);
+  const originHint = recovered ? "original submission" : undefined;
 
   return (
     <Card
@@ -90,13 +89,13 @@ export function ChainFacts({
         <Stat label="Decision" value={proof?.onchain_decision_id ? `#${proof.onchain_decision_id}` : "—"} />
         <Stat
           label="Block"
-          value={proof?.block_number ? proof.block_number.toLocaleString() : noTx}
-          hint={proof?.block_number ? undefined : recoveredHint}
+          value={proof?.block_number ? proof.block_number.toLocaleString() : "—"}
+          hint={originHint}
         />
         <Stat
           label="Gas used"
-          value={proof?.gas_used ? proof.gas_used.toLocaleString() : noTx}
-          hint={proof?.gas_used ? undefined : recoveredHint}
+          value={proof?.gas_used ? proof.gas_used.toLocaleString() : "—"}
+          hint={originHint}
         />
         <Stat
           label="Contract says"

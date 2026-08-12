@@ -43,7 +43,12 @@ export function ExplorerLinks({ proof }: { proof: ProofInfo | null }) {
       label: "Transaction",
       value: proof.tx_hash,
       href: proof.explorer_url || (base ? `${base}/tx/${proof.tx_hash}` : ""),
-      note: "the submission this application sent",
+      // On a re-anchor the contract refuses to write the same digests twice, so this is the
+      // transaction that put them there originally. Same 32 bytes, same block -- worth linking,
+      // and worth attributing rather than implying this attempt sent it.
+      note: proof.recovered
+        ? "the submission that first anchored these digests"
+        : "the submission this application sent",
     });
   }
   if (proof?.contract_address) {
@@ -87,16 +92,6 @@ export function ExplorerLinks({ proof }: { proof: ProofInfo | null }) {
         ) : null
       }
     >
-      {anchored && !proof?.tx_hash && (
-        // The recovery path, stated rather than left as an absence.
-        <p className="mb-3 rounded-md border border-info-line bg-info-soft px-3 py-2 text-2xs leading-relaxed text-muted">
-          This decision was already on chain, so no new transaction was sent — the contract is
-          duplicate-protected and resolved it by fingerprint. There is no transaction of ours to
-          link, but the anchored record below is the same record, and re-anchoring will keep
-          resolving to it rather than paying to write it twice.
-        </p>
-      )}
-
       <dl className="space-y-2.5">
         {links.map((link) => (
           <div key={link.label} className="min-w-0">

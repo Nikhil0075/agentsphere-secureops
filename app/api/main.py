@@ -657,10 +657,11 @@ def anchor(decision_id: str) -> models.ProofInfo:
         info = decisions_service.verify_decision(conn, decision_id, client)
         attempts = _anchor_attempts(conn, decision_id)
         approval = _local_approval(conn, decision_id)
+        origin = _original_submission(conn, row[3], row[4])
 
     return _proof_info(
         decision_id, info, st, attempts=attempts, approval=approval,
-        reason=outcome.reason, client=client
+        reason=outcome.reason, client=client, origin=origin,
     )
 
 
@@ -754,6 +755,34 @@ def _anchor_attempts(conn, decision_id: str) -> list[models.AnchorAttempt]:
     return [models.AnchorAttempt(**{key: row[key] for key in row.keys()}) for row in rows]
 
 
+def _original_submission(conn, evidence_hash: str, output_hash: str):
+    """The transaction that first put these digests on chain, from whichever decision sent it.
+
+    A decision recovered by fingerprint has no transaction of its own -- the contract refused to
+    write the same digests twice, which is the duplicate protection working. But a transaction
+    *does* exist, it is on a public explorer, and its block and gas are as true of this decision as
+    of the one that sent it: they anchored the identical 32 bytes. Reporting them beats reporting a
+    dash, so long as the screen says whose transaction it was.
+
+    Matched on the digest pair rather than the decision id, because the earlier anchor usually
+    belongs to a different local decision row -- a second workflow run produces a new decision id
+    for the same content.
+    """
+    if not output_hash:
+        return None
+    row = conn.execute(
+        """SELECT tx_hash, block_number, gas_used, agent_address, onchain_state, anchored_at,
+                  proof_id
+           FROM blockchain_proofs
+           WHERE output_hash = ? AND evidence_hash = ? AND COALESCE(tx_hash, '') <> ''
+           ORDER BY created_at LIMIT 1""",
+        (output_hash, evidence_hash),
+    ).fetchone()
+    if row is None:
+        return None
+    return models.AnchorAttempt(**{key: row[key] for key in row.keys()})
+
+
 def _local_approval(conn, decision_id: str) -> models.LocalApproval | None:
     """The most recent human decision recorded for this decision, chain or no chain.
 
@@ -785,6 +814,7 @@ def _proof_info(
     approval: models.LocalApproval | None = None,
     client=None,
     reason: str = "",
+    origin: models.AnchorAttempt | None = None,
 ) -> models.ProofInfo:
     """Assemble the proof view.
 
@@ -802,6 +832,12 @@ def _proof_info(
 
     chain_id = info.get("chain_id") or deployment.get("chainId")
     tx_hash = info.get("tx_hash") or ""
+    # Fall back to the transaction that first anchored these digests. `recovered` records that the
+    # figures below describe an earlier submission, so the UI can attribute them rather than imply
+    # this attempt sent them.
+    recovered = bool(origin) and not tx_hash
+    if recovered and origin is not None:
+        tx_hash = origin.tx_hash
     base = EXPLORERS.get(chain_id or 0)
 
     onchain_id = info.get("onchain_decision_id")
@@ -826,8 +862,10 @@ def _proof_info(
         output_hash=info.get("output_hash") or "",
         tx_hash=tx_hash,
         # Declared on the model since day one and never populated on any route until now.
-        block_number=latest.block_number if latest else None,
-        gas_used=latest.gas_used if latest else None,
+        block_number=(latest.block_number if latest else None)
+        or (origin.block_number if origin else None),
+        gas_used=(latest.gas_used if latest else None) or (origin.gas_used if origin else None),
+        recovered=recovered,
         chain_id=chain_id,
         contract_address=info.get("contract_address")
         or (contracts.get("DecisionProof") or {}).get("address", ""),
@@ -878,11 +916,13 @@ def proof(decision_id: str, check_chain: bool = Query(False)) -> models.ProofInf
 
         attempts = _anchor_attempts(conn, decision_id)
         approval = _local_approval(conn, decision_id)
+        origin = _original_submission(conn, row[0], row[1])
         client = get_state().chain() if check_chain else None
         info = decisions_service.verify_decision(conn, decision_id, client)
 
     return _proof_info(
-        decision_id, info, get_state(), attempts=attempts, approval=approval, client=client
+        decision_id, info, get_state(), attempts=attempts, approval=approval, client=client,
+        origin=origin,
     )
 
 

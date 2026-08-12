@@ -359,6 +359,10 @@ class ProofInfo(BaseModel):
     #: link a contract or an address without hardcoding a host -- a link to the wrong network's
     #: explorer is worse than no link, and the chain id is only known here.
     explorer_base: str = ""
+    #: True when tx/block/gas describe the transaction that *first* anchored these digests rather
+    #: than one this decision sent. The figures are real and on a public explorer; only the
+    #: authorship differs, and the UI must say so rather than implying we just submitted them.
+    recovered: bool = False
     valid: bool | None = None
     chain_available: bool = False
     #: False when this response was assembled without touching an RPC. The Proof screen shows it

@@ -360,18 +360,15 @@ export function AnchorJourney({
     {
       key: "block",
       short: "Block",
-      // "not in a block" reads as a failure on the recovery path, where the truth is that the
-      // block belongs to whoever anchored the fingerprint first. Same wording as On chain.
       status: proof?.block_number
         ? `block ${proof.block_number.toLocaleString()}`
-        : proof?.anchored
-          ? "no transaction of ours"
-          : "not in a block",
-      title:
-        proof?.anchored && !proof?.block_number
-          ? "Already on chain, so nothing was re-submitted"
-          : "Included in a Sepolia block",
-      tone: (proof?.block_number ? "done" : "pending") as Tone,
+        : "not in a block",
+      title: proof?.recovered
+        ? "Included in a block by the original submission"
+        : "Included in a Sepolia block",
+      // Green whenever these digests are in a block, whoever submitted them. Grey reads as "not on
+      // chain", which is exactly what a recovered decision is not.
+      tone: (proof?.block_number || proof?.anchored ? "done" : "pending") as Tone,
       source: "app/blockchain/client.py · receipt.blockNumber, receipt.gasUsed",
       body: (
         <>

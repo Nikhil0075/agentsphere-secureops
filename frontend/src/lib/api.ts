@@ -322,6 +322,8 @@ export interface ProofInfo {
   explorer_url: string;
   /** Explorer origin for this chain, so links are never built from a hardcoded host. */
   explorer_base: string;
+  /** tx/block/gas describe the transaction that first anchored these digests, not this attempt. */
+  recovered: boolean;
   valid: boolean | null;
   chain_available: boolean;
   /** False when the response was assembled without an RPC — "we did not ask", not "it said no". */

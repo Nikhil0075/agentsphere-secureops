@@ -57,6 +57,7 @@ const proof = {
   // than rebuilding it from a hardcoded host.
   explorer_url: "https://explorer.example/tx/0xfeedfacecafe",
   explorer_base: "https://explorer.example",
+  recovered: false,
   valid: null,
   chain_available: false,
   chain_checked: false,
@@ -134,17 +135,36 @@ describe("proof screen", () => {
     expect(screen.getByText("holds decision #7")).toBeInTheDocument();
   });
 
-  it("still links the anchored record when the anchor was resolved by fingerprint", async () => {
-    // The duplicate-protected path: anchored, verifiable, and no transaction of ours to show.
-    // The links block used to render nothing at all here, which reads as "nothing is on chain".
-    apiMock.proof.mockResolvedValue({ ...proof, tx_hash: "", explorer_url: "", block_number: null, gas_used: null });
+  it("keeps the original transaction when the anchor was resolved by fingerprint", async () => {
+    // The duplicate-protected path. The contract refuses to write the same digests twice, so this
+    // decision has no transaction of its own -- but one exists, on a public explorer, anchoring the
+    // identical 32 bytes. The API serves it with `recovered`, and the screen shows it rather than a
+    // column of dashes, attributed rather than passed off as this attempt's.
+    apiMock.proof.mockResolvedValue({ ...proof, recovered: true });
     render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
     await screen.findByText("On the explorer");
 
-    expect(screen.getByText(/already on chain, so no new transaction was sent/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: proof.contract_address })).toBeInTheDocument();
-    // And the missing block/gas are named rather than left as bare dashes.
-    expect(screen.getAllByText("no transaction").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: /0xfeedfacecafe/ })).toHaveAttribute(
+      "href",
+      proof.explorer_url,
+    );
+    expect(screen.getByText("the submission that first anchored these digests")).toBeInTheDocument();
+    // Block and gas come from that submission and are reported, not dashed out.
+    expect(screen.getByText("6,543,210")).toBeInTheDocument();
+    expect(screen.getByText("218,455")).toBeInTheDocument();
+    expect(screen.getAllByText("original submission").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/no new transaction was sent/)).not.toBeInTheDocument();
+  });
+
+  it("marks the block stage reached for a recovered anchor", async () => {
+    // Grey reads as "not on chain", which is exactly what a recovered decision is not.
+    apiMock.proof.mockResolvedValue({ ...proof, recovered: true });
+    render(<Proof decisionId={DECISION} onGoToWorkflow={vi.fn()} />);
+    await screen.findByText("VALID");
+    await userEvent.click(screen.getByRole("button", { name: "Stage 5: Block" }));
+    expect(
+      await screen.findByText("Included in a block by the original submission"),
+    ).toBeInTheDocument();
   });
 
   it("offers nothing to click before an anchor has been attempted", async () => {
